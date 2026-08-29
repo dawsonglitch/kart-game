@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/kart.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/pause_menu.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/standings.tscn" id="10"]
 [ext_resource type="Script" path="res://scripts/terrain_builder.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/sky_clouds_builder.gd" id="9"]
 
@@ -94,5 +95,7 @@ script = ExtResource("3")
 [node name="HUD1" parent="UI" instance=ExtResource("6")]
 
 [node name="HUD2" parent="UI" instance=ExtResource("6")]
+
+[node name="Standings" parent="UI" instance=ExtResource("10")]
 
 [node name="PauseMenu" parent="UI" instance=ExtResource("7")]
