@@ -28,6 +28,13 @@ const CRATE_MAX_RADIUS := 170.0  # and this far from the wall
 
 const START_RADIUS := 150.0 # how far from center each kart spawns, facing the middle
 
+## Item boxes, scattered on two rings so there's always one worth driving toward
+## from anywhere in the rink. Kept off the open middle (where the fights happen)
+## and well inside the wall.
+const ITEM_BOX_COUNT := 14
+const ITEM_BOX_MIN_RADIUS := 55.0
+const ITEM_BOX_MAX_RADIUS := 165.0
+
 ## Grandstands: a stack of outward-flaring hollow bands (cap_top/cap_bottom off,
 ## so each is a pure sloped shell, not a solid disk) just past the wall — reads as
 ## a stylized stadium bowl from inside without needing real seat geometry.
@@ -61,6 +68,7 @@ func _ready() -> void:
 	_terrain = get_node_or_null(terrain_path)
 	_build_wall()
 	_build_crates()
+	_build_item_boxes()
 	_build_grandstands()
 	_build_crowd()
 
@@ -242,12 +250,45 @@ func _build_crowd() -> void:
 	add_child(mmi)
 
 
-## Used by arena.gd to place each kart at opposite edges of the rink, facing the
-## middle (and each other) — side is -1.0 or 1.0.
-func get_start_transform(side: float) -> Transform3D:
-	var x := side * START_RADIUS
-	var ground := _ground_height(x, 0.0)
-	var pos := Vector3(x, ground + 0.6, 0.0)
+## Power-up boxes scattered around the rink. Skipped entirely when items are
+## turned off on the main menu (same rule track_builder.gd follows).
+func _build_item_boxes() -> void:
+	if not GameSettings.items_enabled:
+		return
+	var scene: PackedScene = load("res://scenes/item_box.tscn")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9091 # fixed, so the boxes are in the same spots every session
+	for i in range(ITEM_BOX_COUNT):
+		# Evenly spaced angles with a little jitter, rather than fully random
+		# placement, so no arc of the rink ends up with no boxes at all.
+		var angle: float = TAU * (i + rng.randf_range(-0.3, 0.3)) / float(ITEM_BOX_COUNT)
+		var radius: float = rng.randf_range(ITEM_BOX_MIN_RADIUS, ITEM_BOX_MAX_RADIUS)
+		var x: float = cos(angle) * radius
+		var z: float = sin(angle) * radius
+		var box := scene.instantiate()
+		add_child(box)
+		box.global_position = Vector3(x, _ground_height(x, z), z)
+
+
+## Used by arena.gd to place each kart around the edge of the rink, facing the
+## middle. `turns` is a position around the rim in full turns: 0.0 and 0.5 are
+## the two original opposite spawns, and a field of N karts uses i/N so everyone
+## starts evenly spread around the circle rather than stacked up.
+func get_start_transform(turns: float) -> Transform3D:
+	var angle: float = turns * TAU
+	var x := cos(angle) * START_RADIUS
+	var z := sin(angle) * START_RADIUS
+	var ground := _ground_height(x, z)
+	var pos := Vector3(x, ground + 0.6, z)
 	var t := Transform3D()
 	t.origin = pos
 	return t.looking_at(Vector3(0.0, pos.y, 0.0), Vector3.UP)
+
+
+## Rink dimensions for the arena bots' wall avoidance (see ai_driver.gd).
+func get_arena_radius() -> float:
+	return ARENA_RADIUS
+
+
+func get_arena_center() -> Vector3:
+	return Vector3(0.0, _ground_height(0.0, 0.0), 0.0)

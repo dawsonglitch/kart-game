@@ -54,6 +54,13 @@ const OIL_HAZARD_OFFSETS := [200.0, 680.0]
 const OBSTACLE_OFFSETS := [410.0, 520.0]
 const CHECKPOINT_COUNT := 14
 
+## Item boxes come in rows of three across the road, so there's one for each kart
+## in a three-wide pack and choosing a lane is a real (if tiny) decision. Offsets
+## are spaced roughly every 100-150m and deliberately kept clear of the two jump
+## lips (340 / 607) — grabbing a box mid-launch would be luck, not skill.
+const ITEM_BOX_OFFSETS := [90.0, 235.0, 385.0, 500.0, 645.0, 745.0]
+const ITEM_BOX_LATERAL := [-3.4, 0.0, 3.4]
+
 ## Loaded with load() at runtime in _ready(), not preload()'d as top-level consts —
 ## preload() resolves at script *compile* time, which doesn't play well with
 ## ResourceLoader.load_threaded_request() (the loading screen loads this whole
@@ -65,6 +72,7 @@ var _jump_pad_scene: PackedScene
 var _hazard_oil_scene: PackedScene
 var _hazard_obstacle_scene: PackedScene
 var _checkpoint_scene: PackedScene
+var _item_box_scene: PackedScene
 
 ## Scenery scattering — trees/bushes/flowers along both sides of the road, built as
 ## a handful of MultiMeshInstance3D nodes so a few hundred props cost almost nothing
@@ -91,12 +99,14 @@ func _ready() -> void:
 	_hazard_oil_scene = load("res://scenes/hazard_oil.tscn")
 	_hazard_obstacle_scene = load("res://scenes/hazard_obstacle.tscn")
 	_checkpoint_scene = load("res://scenes/checkpoint.tscn")
+	_item_box_scene = load("res://scenes/item_box.tscn")
 	_build_curve()
 	baked_length = path.curve.get_baked_length()
 	_place_boost_pads()
 	_place_jump_pads()
 	_place_hazards()
 	_place_checkpoints()
+	_place_item_boxes()
 	_build_finish_line()
 	_place_scenery()
 
@@ -154,6 +164,28 @@ func _place_checkpoints() -> void:
 		checkpoint.is_finish_line = (i == 0)
 		if race_manager:
 			race_manager.register_checkpoint(checkpoint)
+
+
+## Rows of item boxes across the road. Skipped entirely when items are turned off
+## on the main menu, so that setting genuinely gives back the original game rather
+## than leaving inert boxes lying around the track.
+func _place_item_boxes() -> void:
+	if not GameSettings.items_enabled:
+		return
+	for offset in ITEM_BOX_OFFSETS:
+		var base := _transform_at(offset)
+		for lateral in ITEM_BOX_LATERAL:
+			var box := _item_box_scene.instantiate()
+			add_child(box)
+			box.global_transform = base.translated_local(Vector3(lateral, 0.0, 0.0))
+
+
+## The racing line, handed to race.gd for the bots to follow and to race_manager
+## for computing how far around the lap each kart is. Deliberately NOT named
+## get_path() — that's a Node method already, and shadowing it would break every
+## NodePath lookup against this node.
+func get_racing_path() -> Path3D:
+	return path
 
 
 ## Used by race_manager to place karts at the start line, side by side.

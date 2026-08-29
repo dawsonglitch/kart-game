@@ -9,10 +9,19 @@ signal hit_hazard
 ## Fired only for an actual kart-vs-kart hit (not walls/crates/hazards) — this is
 ## what arena_manager.gd counts as a "crash" for the bumper arena's scoreboard.
 signal kart_collision(other_kart: Node3D)
+## Whatever this kart is currently holding changed (picked up, used, or cleared).
+## The HUD listens so the item slot always matches reality.
+signal item_changed(kind: int)
+## Any jolt worth feeling — 0..1 roughly "how hard". camera_rig.gd turns this into
+## screen shake for whichever player is watching this kart.
+signal impact(strength: float)
 
 @export var player_id: int = 1
 @export var kart_color: Color = Color(0.85, 0.15, 0.15)
 @export var display_name: String = ""
+## When true this kart is driven by ai_driver (see ai_driver.gd) instead of the
+## keyboard, and never reads the p%d_* input actions.
+@export var is_ai: bool = false
 
 ## Body parts (children of Chassis) that get tinted kart_color at runtime.
 const PAINTED_PARTS := ["LowerBody", "Cabin", "Hood"]
@@ -53,12 +62,42 @@ const NAME_TAG_LAYER_BASE := 9
 ## roughly the hitter's own top speed, which reads as a solid, satisfying shove.
 @export var crash_restitution: float = 1.0
 
+@export_group("Items")
+## What the TURBO power-up gives — noticeably stronger and longer than a track
+## boost pad (1.6x for 1.8s), so grabbing an item box feels like a real reward.
+@export var turbo_multiplier: float = 2.0
+@export var turbo_duration: float = 2.6
+## How long a SHIELD lasts if it's never actually hit. It also pops on the first
+## impact it absorbs, whichever comes first.
+@export var shield_duration: float = 8.0
+## Where a dropped OIL slick lands, in metres behind the kart, and how long it
+## stays on the track before evaporating.
+@export var oil_drop_distance: float = 3.6
+@export var oil_lifetime: float = 14.0
+
+@export_group("Engine audio")
+## Engine loop pitch ramps across this range from a standstill to top speed.
+@export var engine_pitch_idle: float = 0.55
+@export var engine_pitch_max: float = 1.7
+@export var engine_volume_db: float = -14.0
+
 var speed: float = 0.0
 var boost_multiplier: float = 1.0
 var boost_timer: float = 0.0
 var traction: float = 1.0
 var traction_timer: float = 0.0
 var stun_timer: float = 0.0
+
+## The power-up in hand, or ItemKind.Kind.NONE. Exactly one at a time — no
+## inventory to manage, which is the right amount of decision-making for a kid
+## who's also trying to steer.
+var held_item: int = ItemKind.Kind.NONE
+## While > 0 the next impact is absorbed instead of landing (and pops the shield).
+var shield_timer: float = 0.0
+
+## Set by race.gd/arena.gd when this kart is a bot. Anything with a
+## get_controls(kart, delta) -> Dictionary method works; see ai_driver.gd.
+var ai_driver: Node = null
 
 ## Gated false by race_manager during the start countdown so nobody can jump the gun.
 var can_drive: bool = true
@@ -86,8 +125,17 @@ var respawn_rotation: Vector3
 @onready var slope_ray: RayCast3D = $SlopeRay
 @onready var name_tag: Label3D = $NameTag
 @onready var crash_smoke: GPUParticles3D = $CrashSmoke
+@onready var boost_flames: GPUParticles3D = $BoostFlames
+@onready var shield_bubble: MeshInstance3D = $ShieldBubble
 
 var _bang_scene: PackedScene = load("res://scenes/bang_effect.tscn")
+var _rocket_scene: PackedScene = load("res://scenes/rocket.tscn")
+var _oil_scene: PackedScene = load("res://scenes/hazard_oil.tscn")
+
+## Per-kart looping engine sound, built in code rather than in kart.tscn because
+## the stream has to be a looping *duplicate* (see AudioManager.get_looping_stream)
+## — that can't be expressed in the scene file against the shared imported clip.
+var _engine_player: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -96,8 +144,15 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.25
 	add_to_group("karts")
+	# AudioManager's distance falloff measures against human-driven karts only, so
+	# bots must stay out of this group or they'd act as listeners themselves.
+	if not is_ai:
+		add_to_group("player_karts")
 	_apply_color()
 	_setup_name_tag()
+	_setup_engine_audio()
+	if shield_bubble:
+		shield_bubble.visible = false
 
 
 func _physics_process(delta: float) -> void:
@@ -108,13 +163,12 @@ func _physics_process(delta: float) -> void:
 	var braking := false
 
 	if stun_timer <= 0.0 and can_drive:
-		var accel_action := "p%d_accel" % player_id
-		var brake_action := "p%d_brake" % player_id
-		var left_action := "p%d_left" % player_id
-		var right_action := "p%d_right" % player_id
-		steer_input = Input.get_axis(left_action, right_action)
-		throttle = Input.is_action_pressed(accel_action)
-		braking = Input.is_action_pressed(brake_action)
+		var controls := _gather_controls(delta)
+		steer_input = controls["steer"]
+		throttle = controls["throttle"]
+		braking = controls["brake"]
+		if controls["use_item"]:
+			use_item()
 
 	var current_max_speed := max_speed * boost_multiplier
 
@@ -146,9 +200,26 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_check_wall_collisions()
 	_update_visual_lean(steer_input, delta)
+	_update_engine_audio()
 
 	if global_position.y < -10.0:
 		respawn()
+
+
+## Either the keyboard (human) or the attached bot brain (AI), in the one shape
+## _physics_process cares about. Keeping both behind this call is what lets a bot
+## kart run the exact same driving model as a player rather than a parallel one.
+func _gather_controls(delta: float) -> Dictionary:
+	if is_ai:
+		if ai_driver and ai_driver.has_method("get_controls"):
+			return ai_driver.get_controls(self, delta)
+		return {"steer": 0.0, "throttle": false, "brake": false, "use_item": false}
+	return {
+		"steer": Input.get_axis("p%d_left" % player_id, "p%d_right" % player_id),
+		"throttle": Input.is_action_pressed("p%d_accel" % player_id),
+		"brake": Input.is_action_pressed("p%d_brake" % player_id),
+		"use_item": Input.is_action_just_pressed("p%d_item" % player_id),
+	}
 
 
 func _tick_timers(delta: float) -> void:
@@ -164,7 +235,13 @@ func _tick_timers(delta: float) -> void:
 		stun_timer -= delta
 	if crash_cooldown_timer > 0.0:
 		crash_cooldown_timer -= delta
+	if shield_timer > 0.0:
+		shield_timer -= delta
+		if shield_timer <= 0.0:
+			_set_shield_visible(false)
 	crash_velocity = crash_velocity.move_toward(Vector3.ZERO, crash_velocity_decay * delta)
+	if boost_flames:
+		boost_flames.emitting = boost_timer > 0.0
 
 
 ## Wall/curb/other-kart impacts aren't scripted triggers like hazards — they're
@@ -211,6 +288,7 @@ func _check_wall_collisions() -> void:
 		var impact_speed := absf(speed)
 		if impact_speed < crash_speed_threshold:
 			continue
+		AudioManager.play_at("crash_wall", global_position, -4.0)
 		apply_stun(crash_stun_duration, normal * impact_speed * crash_bounce_factor)
 		return
 
@@ -232,6 +310,7 @@ func _resolve_kart_collision(other: CharacterBody3D, normal: Vector3) -> void:
 	var v1n: float = _intended_velocity().dot(normal)
 	var v2n: float = other._intended_velocity().dot(normal)
 	var impulse: Vector3 = normal * ((v2n - v1n) * crash_restitution)
+	AudioManager.play_at("crash_kart", global_position, -2.0)
 	apply_crash_impulse(impulse)
 	other.apply_crash_impulse(-impulse)
 	kart_collision.emit(other)
@@ -303,12 +382,15 @@ func apply_jump_impulse(vertical_power: float, forward_boost: float = 0.0) -> vo
 	if forward_boost > 0.0:
 		speed = max(speed, forward_boost)
 	jump_lock_timer = 0.3
+	AudioManager.play_at("jump", global_position, -3.0)
 
 
-## Called by boost_pad.gd on overlap.
+## Called by boost_pad.gd on overlap, and by the TURBO item.
 func apply_boost(multiplier: float, duration: float) -> void:
 	boost_multiplier = max(boost_multiplier, multiplier)
 	boost_timer = max(boost_timer, duration)
+	AudioManager.play_at("boost", global_position, -5.0)
+	impact.emit(0.35) # a punch of shake so speed *feels* like speed
 
 
 ## Called by hazard_oil.gd on overlap.
@@ -326,23 +408,34 @@ func apply_traction_loss(amount: float, duration: float) -> void:
 ## lands at an angle actually shoves you sideways for a beat instead of the
 ## sideways component vanishing the instant the next physics frame recomputes
 ## velocity from forward*speed alone.
-func apply_stun(duration: float, knockback: Vector3) -> void:
+##
+## Returns whether the hit actually landed — false means a shield ate it. Most
+## callers ignore that, but rocket.gd needs it: a blocked rocket shouldn't score
+## on the arena's crash counter or play the "got hit" sound over the shield clang.
+func apply_stun(duration: float, knockback: Vector3) -> bool:
+	if _absorb_with_shield():
+		return false
 	stun_timer = max(stun_timer, duration)
 	crash_cooldown_timer = crash_cooldown
 	speed = -absf(speed) * crash_bounce_factor
 	crash_velocity += knockback
 	_play_crash_smoke()
+	impact.emit(clamp(knockback.length() / 16.0, 0.25, 1.0))
 	hit_hazard.emit()
+	return true
 
 
 ## Called by _resolve_kart_collision — a proper momentum-exchange impulse from
 ## hitting another (moving) kart, as opposed to apply_stun's simpler "bounce back
 ## along your own facing," which only makes sense against something immovable.
 func apply_crash_impulse(impulse: Vector3) -> void:
+	if _absorb_with_shield():
+		return
 	crash_velocity += impulse
 	stun_timer = max(stun_timer, crash_stun_duration)
 	crash_cooldown_timer = crash_cooldown
 	_play_crash_smoke()
+	impact.emit(clamp(impulse.length() / 16.0, 0.3, 1.0))
 	hit_hazard.emit()
 
 
@@ -350,6 +443,118 @@ func _play_crash_smoke() -> void:
 	if crash_smoke:
 		crash_smoke.restart()
 		crash_smoke.emitting = true
+
+
+# ---------------------------------------------------------------------------
+# Power-ups. See item_kind.gd for the catalog and the catch-up weighted roll;
+# item_box.gd hands them out; the HUD reads them off the item_changed signal.
+# ---------------------------------------------------------------------------
+
+## Called by item_box.gd. Silently ignored if the kart already holds something,
+## so a box can't be spent on a full hand.
+func grant_item(kind: int) -> void:
+	if held_item != ItemKind.Kind.NONE or kind == ItemKind.Kind.NONE:
+		return
+	held_item = kind
+	item_changed.emit(held_item)
+
+
+func use_item() -> void:
+	if held_item == ItemKind.Kind.NONE:
+		return
+	var kind := held_item
+	# Cleared *before* firing so an item that immediately affects this kart (the
+	# shield bubble popping on a simultaneous hit, say) can't re-enter here and
+	# spend the same item twice.
+	held_item = ItemKind.Kind.NONE
+	item_changed.emit(held_item)
+	match kind:
+		ItemKind.Kind.TURBO:
+			apply_boost(turbo_multiplier, turbo_duration)
+		ItemKind.Kind.ROCKET:
+			_fire_rocket()
+		ItemKind.Kind.OIL:
+			_drop_oil()
+		ItemKind.Kind.SHIELD:
+			_raise_shield()
+
+
+func _fire_rocket() -> void:
+	if not _rocket_scene or not get_parent():
+		return
+	var rocket := _rocket_scene.instantiate()
+	rocket.owner_kart = self
+	get_parent().add_child(rocket)
+	# Launched from just ahead of the nose so it can't clip the firing kart's own
+	# collision box on the very first physics step.
+	var forward: Vector3 = -global_transform.basis.z
+	rocket.global_position = global_position + forward * 2.2 + Vector3.UP * 0.8
+	rocket.global_transform.basis = Basis.looking_at(forward, Vector3.UP)
+
+
+func _drop_oil() -> void:
+	if not _oil_scene or not get_parent():
+		return
+	var oil := _oil_scene.instantiate()
+	oil.lifetime = oil_lifetime
+	get_parent().add_child(oil)
+	var back: Vector3 = global_transform.basis.z
+	oil.global_position = global_position + back * oil_drop_distance
+	AudioManager.play_at("item_oil", global_position, -6.0)
+
+
+func _raise_shield() -> void:
+	shield_timer = shield_duration
+	_set_shield_visible(true)
+	AudioManager.play_at("shield_up", global_position, -6.0)
+
+
+## Returns true if a live shield ate this hit — the caller then skips the stun
+## and knockback entirely. One hit per shield, so it pops on use.
+func _absorb_with_shield() -> bool:
+	if shield_timer <= 0.0:
+		return false
+	shield_timer = 0.0
+	_set_shield_visible(false)
+	AudioManager.play_at("shield_block", global_position, -3.0)
+	impact.emit(0.3)
+	return true
+
+
+func is_shielded() -> bool:
+	return shield_timer > 0.0
+
+
+func _set_shield_visible(shown: bool) -> void:
+	if shield_bubble:
+		shield_bubble.visible = shown
+
+
+# ---------------------------------------------------------------------------
+# Engine audio — one looping clip per kart, pitched by speed. Volume is faded by
+# distance for bots so a full field doesn't drown out the player's own engine.
+# ---------------------------------------------------------------------------
+
+func _setup_engine_audio() -> void:
+	var stream: AudioStream = AudioManager.get_looping_stream("engine")
+	if stream == null:
+		return
+	_engine_player = AudioStreamPlayer.new()
+	_engine_player.stream = stream
+	_engine_player.bus = AudioManager.SFX_BUS
+	_engine_player.volume_db = engine_volume_db
+	add_child(_engine_player)
+	_engine_player.play()
+
+
+func _update_engine_audio() -> void:
+	if _engine_player == null:
+		return
+	var speed_ratio: float = clamp(absf(speed) / max_speed, 0.0, 1.6)
+	_engine_player.pitch_scale = lerp(engine_pitch_idle, engine_pitch_max, speed_ratio)
+	if is_ai:
+		var distance := AudioManager.distance_to_nearest_listener(global_position)
+		_engine_player.volume_db = engine_volume_db - 6.0 + AudioManager.falloff_db(distance)
 
 
 ## Called by checkpoint.gd as each gate is passed, so a fall respawns here.

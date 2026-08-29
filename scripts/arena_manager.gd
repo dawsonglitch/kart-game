@@ -37,8 +37,10 @@ func _process(delta: float) -> void:
 func start_countdown() -> void:
 	for i in range(COUNTDOWN_SECONDS, 0, -1):
 		countdown_tick.emit(i)
+		AudioManager.play("countdown", -4.0, 0.9)
 		await get_tree().create_timer(1.0).timeout
 	countdown_tick.emit(0)
+	AudioManager.play("go", -3.0)
 	arena_active = true
 	for kart in karts:
 		kart.can_drive = true

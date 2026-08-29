@@ -26,5 +26,23 @@ var player2_name: String = "Player 2"
 var player1_color: Color = Color(0.85, 0.15, 0.15)
 var player2_color: Color = Color(0.15, 0.4, 0.9)
 
-## Filled in by race_manager.gd when a race finishes: [{player_id, total_time}, ...]
+## How many AI-driven karts join the field, 0-3. Set from the main menu; race.gd
+## and arena.gd instance that many extra karts and attach an AIDriver to each.
+var bot_count: int = 2
+
+## Master switch for the item-box power-ups. Off gives the original pure-driving
+## game, which is the better one for a kid still learning to steer.
+var items_enabled: bool = true
+
+## Bot identities, indexed in order as bots are added. Names and colors are fixed
+## rather than random so the same bot is recognizably "the yellow one" every race;
+## skill is spread so the field isn't three clones of the same driver.
+const BOT_PROFILES := [
+	{"name": "Zippy", "color": Color(0.95, 0.8, 0.15), "skill": 0.72},
+	{"name": "Turbo Tina", "color": Color(0.25, 0.8, 0.35), "skill": 0.86},
+	{"name": "Rusty", "color": Color(0.85, 0.45, 0.15), "skill": 0.6},
+]
+
+## Filled in by race_manager.gd when a race finishes:
+## [{player_id, display_name, total_time, is_ai}, ...] in finish order.
 var last_results: Array = []
