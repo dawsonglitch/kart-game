@@ -149,6 +149,13 @@ toggle_mode = true
 button_pressed = true
 text = "🎁 Items: On"
 
+[node name="TimerButton" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(170, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+button_pressed = true
+text = "⏱ 2 Min Match"
+
 [node name="ButtonSpacer" type="Control" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 12)
 

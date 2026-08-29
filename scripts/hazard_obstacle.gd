@@ -39,4 +39,10 @@ func _on_body_entered(body: Node3D) -> void:
 	var impact_speed: float = absf(body.speed) if "speed" in body else 0.0
 	var strength: float = knockback_base + impact_speed * knockback_speed_factor
 	AudioManager.play_at("crash_obstacle", global_position, -4.0)
-	body.apply_stun(stun_duration, away * strength + Vector3.UP * 3.0)
+	# No source kart: a log is part of the course. Passing none lets apply_stun
+	# fall back to whoever shoved this kart into it, if anyone did.
+	body.apply_stun(
+		stun_duration,
+		away * strength + Vector3.UP * 3.0,
+		CrashBlame.Cause.HAZARD,
+	)
