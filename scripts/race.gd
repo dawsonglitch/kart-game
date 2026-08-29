@@ -10,6 +10,11 @@ const LANE_OFFSET := 2.2
 ## two-lane road.
 const GRID_ROW_SPACING := 5.0
 
+## How long the per-player "1st! 0:52.31" flash gets to itself before the shared
+## standings board slides over it. Long enough to read your own result, short
+## enough that nobody sits wondering whether the race is actually over.
+const STANDINGS_DELAY := 2.2
+
 @onready var race_manager: Node = $RaceManager
 @onready var world: Node3D = $World
 @onready var track: Node3D = $World/Track
@@ -26,6 +31,7 @@ const GRID_ROW_SPACING := 5.0
 @onready var hud1: Control = $UI/HUD1
 @onready var hud2: Control = $UI/HUD2
 @onready var pause_menu: Control = $UI/PauseMenu
+@onready var standings: Control = $UI/Standings
 
 ## Loaded at runtime rather than preload()'d — see the note in track_builder.gd
 ## about preload() and threaded scene loading.
@@ -76,6 +82,13 @@ func _ready() -> void:
 	pause_menu.hide()
 	pause_menu.restart_requested.connect(_on_restart_requested)
 	pause_menu.quit_requested.connect(_on_quit_requested)
+
+	# The standings board reuses the pause menu's two exits rather than inventing
+	# its own — "Race Again" and "Main Menu" mean exactly the same thing here.
+	standings.hide()
+	standings.restart_requested.connect(_on_restart_requested)
+	standings.quit_requested.connect(_on_quit_requested)
+	race_manager.race_finished.connect(_on_race_finished)
 
 	AudioManager.start_ambience()
 	race_manager.start_countdown()
@@ -167,13 +180,32 @@ func _place_kart(kart: CharacterBody3D, lane_offset: float, row: int = 0) -> voi
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause"):
+	# Nothing left to pause once the board is up, and stacking the pause menu on
+	# top of it just buries the results behind a second overlay.
+	if event.is_action_pressed("pause") and not standings.visible:
 		_toggle_pause()
 
 
 func _toggle_pause() -> void:
 	get_tree().paused = not get_tree().paused
 	pause_menu.visible = get_tree().paused
+
+
+## Both HUDs already flashed this player's own placement; now everyone gets the
+## same list of the whole field. hud.gd keeps the per-player flash because it
+## lands the instant you cross the line, which the shared board deliberately
+## doesn't.
+func _on_race_finished(_results: Array) -> void:
+	# Connected rather than awaited: restarting or quitting from the pause menu
+	# during the wait frees this scene, and a severed connection is the one way
+	# that can't resume into a freed node.
+	get_tree().create_timer(STANDINGS_DELAY).timeout.connect(_show_standings)
+
+
+func _show_standings() -> void:
+	hud1.clear_message()
+	hud2.clear_message()
+	standings.show_standings(race_manager)
 
 
 func _on_restart_requested() -> void:

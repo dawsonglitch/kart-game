@@ -54,7 +54,9 @@ const BOT_PROFILES := [
 ]
 
 ## The last finished session's standings, best first. race_manager.gd fills it
-## with [{player_id, display_name, total_time, is_ai, place}, ...] in finish
-## order; arena_manager.gd fills it with [{player_id, display_name,
-## crashes_caused, crashes_taken, is_ai, place}, ...] when the clock runs out.
+## with [{player_id, display_name, total_time, is_ai, color, place, finished},
+## ...] in finish order, growing as late bots come in; arena_manager.gd fills it
+## with [{player_id, display_name, crashes_caused, crashes_taken, is_ai, place},
+## ...] when the clock runs out. For the *whole* race field including karts still
+## out on track, ask race_manager.get_standings() while the race scene is alive.
 var last_results: Array = []
