@@ -40,7 +40,7 @@ theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.1, 1)
 theme_override_constants/outline_size = 5
 horizontal_alignment = 1
-text = "Player 1: Arrow Keys      Player 2: W A S D"
+text = "P1: Arrows + Right Shift      P2: W A S D + Left Shift"
 
 [node name="NameSpacer" type="Control" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 8)
@@ -104,6 +104,51 @@ theme_override_font_sizes/font_size = 18
 toggle_mode = true
 text = "💥 Bumper Arena"
 
+[node name="BotRow" type="HBoxContainer" parent="Center/VBox"]
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="BotLabel" type="Label" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(90, 44)
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.1, 1)
+theme_override_constants/outline_size = 5
+vertical_alignment = 1
+text = "Bots"
+
+[node name="Bots0Button" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(52, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+text = "0"
+
+[node name="Bots1Button" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(52, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+text = "1"
+
+[node name="Bots2Button" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(52, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+button_pressed = true
+text = "2"
+
+[node name="Bots3Button" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(52, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+text = "3"
+
+[node name="ItemsButton" type="Button" parent="Center/VBox/BotRow"]
+custom_minimum_size = Vector2(150, 44)
+theme_override_font_sizes/font_size = 18
+toggle_mode = true
+button_pressed = true
+text = "🎁 Items: On"
+
 [node name="ButtonSpacer" type="Control" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 12)
 
@@ -123,4 +168,4 @@ theme_override_colors/font_color = Color(1, 1, 1, 0.85)
 theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.1, 1)
 theme_override_constants/outline_size = 4
 horizontal_alignment = 1
-text = "Grab speed boosts, catch big air, and watch out for hazards!"
+text = "Grab item boxes, press Shift to fire, and watch out for hazards!"

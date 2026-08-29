@@ -38,4 +38,5 @@ func _on_body_entered(body: Node3D) -> void:
 	# Faster hits get knocked back harder — a slow bump barely nudges you.
 	var impact_speed: float = absf(body.speed) if "speed" in body else 0.0
 	var strength: float = knockback_base + impact_speed * knockback_speed_factor
+	AudioManager.play_at("crash_obstacle", global_position, -4.0)
 	body.apply_stun(stun_duration, away * strength + Vector3.UP * 3.0)

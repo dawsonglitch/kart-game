@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://cq0itembox01"]
+
+[ext_resource type="Script" path="res://scripts/item_box.gd" id="1"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1"]
+size = Vector3(2.2, 2.6, 2.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_1"]
+size = Vector3(1.7, 1.7, 1.7)
+
+[sub_resource type="StandardMaterial3D" id="Mat_box"]
+albedo_color = Color(1, 0.85, 0.25, 0.75)
+transparency = 1
+emission_enabled = true
+emission = Color(1, 0.7, 0.15, 1)
+emission_energy_multiplier = 1.6
+
+[node name="ItemBox" type="Area3D"]
+collision_layer = 4
+collision_mask = 2
+script = ExtResource("1")
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+shape = SubResource("BoxShape3D_1")
+
+[node name="Visual" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, 0)
+
+[node name="Cube" type="MeshInstance3D" parent="Visual"]
+transform = Transform3D(0.92, 0, 0.38, 0, 1, 0, -0.38, 0, 0.92, 0, 0, 0)
+mesh = SubResource("BoxMesh_1")
+material_override = SubResource("Mat_box")
+
+[node name="Mark" type="Label3D" parent="Visual"]
+billboard = 1
+no_depth_test = true
+font_size = 96
+outline_size = 14
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.35, 0.15, 0, 1)
+pixel_size = 0.012
+text = "?"

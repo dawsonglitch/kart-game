@@ -1,0 +1,74 @@
+[gd_scene format=3 uid="uid://cq0rocket001"]
+
+[ext_resource type="Script" path="res://scripts/rocket.gd" id="1"]
+
+[sub_resource type="SphereShape3D" id="Sphere_hit"]
+radius = 0.45
+
+[sub_resource type="CapsuleMesh" id="Capsule_body"]
+radius = 0.22
+height = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_rocket"]
+albedo_color = Color(1, 0.35, 0.2, 1)
+emission_enabled = true
+emission = Color(1, 0.45, 0.1, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="CylinderMesh" id="Cone_nose"]
+top_radius = 0.0
+bottom_radius = 0.22
+height = 0.35
+
+[sub_resource type="StandardMaterial3D" id="Mat_flame"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(1, 0.8, 0.2, 0.85)
+emission_enabled = true
+emission = Color(1, 0.7, 0.15, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="SphereMesh" id="Sphere_flame"]
+material = SubResource("Mat_flame")
+radius = 0.16
+height = 0.32
+
+[sub_resource type="ParticleProcessMaterial" id="ProcessMat_trail"]
+direction = Vector3(0, 0, 1)
+spread = 12.0
+initial_velocity_min = 1.0
+initial_velocity_max = 3.0
+gravity = Vector3(0, 0.5, 0)
+scale_min = 0.4
+scale_max = 1.0
+color = Color(1, 0.75, 0.3, 0.8)
+
+[node name="Rocket" type="Area3D"]
+collision_layer = 0
+collision_mask = 3
+script = ExtResource("1")
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("Sphere_hit")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0)
+mesh = SubResource("Capsule_body")
+material_override = SubResource("Mat_rocket")
+
+[node name="Nose" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, -0.62)
+mesh = SubResource("Cone_nose")
+material_override = SubResource("Mat_rocket")
+
+[node name="Trail" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
+amount = 24
+lifetime = 0.35
+process_material = SubResource("ProcessMat_trail")
+draw_pass_1 = SubResource("Sphere_flame")
+
+[node name="GroundRay" type="RayCast3D" parent="."]
+target_position = Vector3(0, -6, 0)
+collision_mask = 1
