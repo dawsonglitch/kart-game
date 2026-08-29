@@ -10,6 +10,7 @@ extends Control
 @onready var race_mode_button: Button = $Center/VBox/ModeRow/RaceModeButton
 @onready var arena_mode_button: Button = $Center/VBox/ModeRow/ArenaModeButton
 @onready var items_button: Button = $Center/VBox/BotRow/ItemsButton
+@onready var timer_button: Button = $Center/VBox/BotRow/TimerButton
 @onready var one_player_button: Button = $Center/VBox/OnePlayerButton
 @onready var two_player_button: Button = $Center/VBox/TwoPlayerButton
 
@@ -43,6 +44,10 @@ func _ready() -> void:
 	items_button.toggled.connect(_on_items_toggled)
 	_on_items_toggled(items_button.button_pressed)
 
+	timer_button.button_pressed = GameSettings.arena_timed
+	timer_button.toggled.connect(_on_timer_toggled)
+	_on_timer_toggled(timer_button.button_pressed)
+
 	_select_mode(GameSettings.GameMode.RACE, true)
 	_select_bots(_selected_bots, true)
 	name1_field.grab_focus()
@@ -56,6 +61,10 @@ func _select_mode(mode: int, silent: bool = false) -> void:
 	_selected_mode = mode
 	race_mode_button.button_pressed = (mode == GameSettings.GameMode.RACE)
 	arena_mode_button.button_pressed = (mode == GameSettings.GameMode.ARENA)
+	# The match clock only means anything in the arena — a race ends on laps —
+	# so the button greys out rather than sitting there implying otherwise.
+	timer_button.disabled = (mode != GameSettings.GameMode.ARENA)
+	timer_button.modulate = Color(1, 1, 1, 1.0 if not timer_button.disabled else 0.45)
 	if not silent:
 		AudioManager.play("ui_click", -8.0)
 
@@ -72,6 +81,12 @@ func _on_items_toggled(enabled: bool) -> void:
 	items_button.text = "🎁 Items: On" if enabled else "🎁 Items: Off"
 
 
+## Arena only: on, the rink runs as a timed match and the most crashes caused
+## wins it; off, it never ends and the crash count is just a running tally.
+func _on_timer_toggled(enabled: bool) -> void:
+	timer_button.text = "⏱ 2 Min Match" if enabled else "⏱ No Time Limit"
+
+
 func _start(player_count: int) -> void:
 	GameSettings.player1_name = name1_field.text.strip_edges() if name1_field.text.strip_edges() != "" else "Player 1"
 	GameSettings.player2_name = name2_field.text.strip_edges() if name2_field.text.strip_edges() != "" else "Player 2"
@@ -81,6 +96,7 @@ func _start(player_count: int) -> void:
 	GameSettings.game_mode = _selected_mode
 	GameSettings.bot_count = _selected_bots
 	GameSettings.items_enabled = items_button.button_pressed
+	GameSettings.arena_timed = timer_button.button_pressed
 	GameSettings.next_scene_path = (
 		"res://scenes/arena.tscn" if _selected_mode == GameSettings.GameMode.ARENA
 		else "res://scenes/race.tscn"

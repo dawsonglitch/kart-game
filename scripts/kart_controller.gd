@@ -6,9 +6,12 @@ extends CharacterBody3D
 ## goes false and gravity takes over — that's what gives jumps real hang-time.
 
 signal hit_hazard
-## Fired only for an actual kart-vs-kart hit (not walls/crates/hazards) — this is
-## what arena_manager.gd counts as a "crash" for the bumper arena's scoreboard.
-signal kart_collision(other_kart: Node3D)
+## A crash landed on this kart. `by` is whoever is answerable for it — the kart
+## that drove into you, the one that fired the rocket, the one whose slick you
+## slid off — or null when nobody is (your own bad line into a wall). `cause` is
+## a CrashBlame.Cause. arena_manager.gd scores the bumper arena off this signal,
+## crediting `by` rather than whoever happened to get hit.
+signal crashed(by: Node3D, cause: int)
 ## Whatever this kart is currently holding changed (picked up, used, or cleared).
 ## The HUD listens so the item slot always matches reality.
 signal item_changed(kind: int)
@@ -61,6 +64,16 @@ const NAME_TAG_LAYER_BASE := 9
 ## stays at a plain 1:1 exchange; a full-speed hit already moves the hit kart at
 ## roughly the hitter's own top speed, which reads as a solid, satisfying shove.
 @export var crash_restitution: float = 1.0
+## Who caused a kart-vs-kart hit is decided by which kart was closing on the
+## contact point faster. Inside this margin (m/s) neither one clearly started it
+## — a head-on where both drivers kept their foot in is genuinely both their
+## fault — so both sides are credited against each other.
+@export var ram_blame_margin: float = 1.5
+## How long after being rammed, rocketed, or oiled this kart counts as "not
+## really driving". Anything it crashes into during that window is still charged
+## to whoever put it there, which is what makes a rocket that punts someone into
+## a wall — or into a third kart — score for the kart that fired it.
+@export var blame_carry_time: float = 1.5
 
 @export_group("Items")
 ## What the TURBO power-up gives — noticeably stronger and longer than a track
@@ -110,6 +123,14 @@ var jump_lock_timer: float = 0.0
 ## While > 0, wall/kart crash detection is skipped so a single hard hit doesn't
 ## retrigger every physics frame for as long as contact continues.
 var crash_cooldown_timer: float = 0.0
+
+## Who is currently answerable for whatever happens to this kart, and for how
+## much longer. Set by mark_blame() whenever something outside the driver's
+## control acts on it. Already flattened when it's stored — if the kart that
+## shoved us was itself someone's victim at the time, the *original* instigator
+## goes in here — so reading it never has to walk a chain.
+var _blame_source: Node3D = null
+var _blame_timer: float = 0.0
 
 ## World-space horizontal "shove" velocity from a crash, layered on top of the
 ## normal forward/back driving model and decaying back to zero over time — this
@@ -235,6 +256,10 @@ func _tick_timers(delta: float) -> void:
 		stun_timer -= delta
 	if crash_cooldown_timer > 0.0:
 		crash_cooldown_timer -= delta
+	if _blame_timer > 0.0:
+		_blame_timer -= delta
+		if _blame_timer <= 0.0:
+			_blame_source = null
 	if shield_timer > 0.0:
 		shield_timer -= delta
 		if shield_timer <= 0.0:
@@ -289,7 +314,11 @@ func _check_wall_collisions() -> void:
 		if impact_speed < crash_speed_threshold:
 			continue
 		AudioManager.play_at("crash_wall", global_position, -4.0)
-		apply_stun(crash_stun_duration, normal * impact_speed * crash_bounce_factor)
+		apply_stun(
+			crash_stun_duration,
+			normal * impact_speed * crash_bounce_factor,
+			CrashBlame.Cause.WALL,
+		)
 		return
 
 
@@ -311,11 +340,74 @@ func _resolve_kart_collision(other: CharacterBody3D, normal: Vector3) -> void:
 	var v2n: float = other._intended_velocity().dot(normal)
 	var impulse: Vector3 = normal * ((v2n - v1n) * crash_restitution)
 	AudioManager.play_at("crash_kart", global_position, -2.0)
-	apply_crash_impulse(impulse)
-	other.apply_crash_impulse(-impulse)
-	kart_collision.emit(other)
-	other.kart_collision.emit(self)
+	var landed_here := apply_crash_impulse(impulse)
+	var landed_there: bool = other.apply_crash_impulse(-impulse)
+
+	# The normal points out of `other`'s surface toward us, so this kart closes on
+	# the contact by moving *against* it and `other` closes by moving along it.
+	# Whichever is closing faster is the one that drove into the other.
+	var closing_here := -v1n
+	var closing_there := v2n
+
+	# Both culprits are resolved before either hit is recorded. Recording one
+	# marks blame on the kart that took it, so looking the second one up
+	# afterwards would read blame this very collision just wrote and drop the
+	# reciprocal credit — a head-on would score for one driver instead of two.
+	var culprit_here: Node3D = get_blame_source(self)
+	var culprit_there: Node3D = other.get_blame_source(other)
+
+	if absf(closing_here - closing_there) < ram_blame_margin:
+		# Neither one clearly started it — a head-on where both drivers kept their
+		# foot in is genuinely both their doing, so it scores for both.
+		_charge_ram(culprit_here, other, landed_there)
+		_charge_ram(culprit_there, self, landed_here)
+	elif closing_here > closing_there:
+		_charge_ram(culprit_here, other, landed_there)
+	else:
+		_charge_ram(culprit_there, self, landed_here)
+
 	_spawn_bang_effect(other)
+
+
+## Record one kart-vs-kart hit: `culprit` is whoever is answerable for the kart
+## that drove in, `victim` is the one that got driven into. `landed` is false
+## when a shield ate the hit, and a blocked hit scores nothing at all.
+func _charge_ram(culprit: Node3D, victim: CharacterBody3D, landed: bool) -> void:
+	# culprit == victim is a kart being shoved into the very kart that shoved it:
+	# the shover's own doing, not a second hit for them to bank.
+	if not landed or culprit == null or culprit == victim:
+		return
+	victim.mark_blame(culprit, crash_stun_duration)
+	victim.crashed.emit(culprit, CrashBlame.Cause.RAM)
+
+
+## Whoever is currently on the hook for what this kart does or suffers: the live
+## blame source if something recently took control away from the driver,
+## otherwise `fallback`.
+func get_blame_source(fallback: Node3D = null) -> Node3D:
+	if _blame_timer > 0.0 and is_instance_valid(_blame_source):
+		return _blame_source
+	return fallback
+
+
+## Charge `source` for whatever befalls this kart over the next `effect_duration`
+## + blame_carry_time seconds. Called by anything that takes the wheel away from
+## the driver — a ram, a rocket, an oil slick. The most recent cause wins: a
+## fresh hit explains the next crash better than a stale one does.
+##
+## `source` is stored exactly as given, so callers must hand over the kart that
+## is genuinely answerable rather than the one physically involved. Every caller
+## already does: a ram resolves its culprit through get_blame_source() first, and
+## a rocket or an oil slick names the kart that chose to fire or drop it, which
+## is its own act no matter what is happening to that kart at the time. Chains
+## still work, because each link stores an already-resolved culprit — resolving
+## a second time here would instead redirect a rocket to whoever had just rammed
+## the kart that fired it.
+func mark_blame(source: Node3D, effect_duration: float = 0.0) -> void:
+	if source == null or source == self or not is_instance_valid(source):
+		return
+	_blame_source = source
+	_blame_timer = effect_duration + blame_carry_time
 
 
 func _spawn_bang_effect(other: Node3D) -> void:
@@ -409,10 +501,18 @@ func apply_traction_loss(amount: float, duration: float) -> void:
 ## sideways component vanishing the instant the next physics frame recomputes
 ## velocity from forward*speed alone.
 ##
+## `cause` says what did it (a CrashBlame.Cause) and `source` names the kart
+## behind it where there is one — a rocket knows who fired it, a wall doesn't.
+##
 ## Returns whether the hit actually landed — false means a shield ate it. Most
 ## callers ignore that, but rocket.gd needs it: a blocked rocket shouldn't score
 ## on the arena's crash counter or play the "got hit" sound over the shield clang.
-func apply_stun(duration: float, knockback: Vector3) -> bool:
+func apply_stun(
+	duration: float,
+	knockback: Vector3,
+	cause: int = CrashBlame.Cause.HAZARD,
+	source: Node3D = null,
+) -> bool:
 	if _absorb_with_shield():
 		return false
 	stun_timer = max(stun_timer, duration)
@@ -422,21 +522,33 @@ func apply_stun(duration: float, knockback: Vector3) -> bool:
 	_play_crash_smoke()
 	impact.emit(clamp(knockback.length() / 16.0, 0.25, 1.0))
 	hit_hazard.emit()
+	# A wall or a swinging log is nobody's doing on its own, so those fall back to
+	# whoever put this kart into it — if anyone did — and otherwise go uncredited.
+	# A named source outranks that: a rocket landing right now explains this crash
+	# better than a bump from a second ago does.
+	var culprit: Node3D = source if source != null else get_blame_source()
+	mark_blame(culprit, duration)
+	crashed.emit(culprit, cause)
 	return true
 
 
 ## Called by _resolve_kart_collision — a proper momentum-exchange impulse from
 ## hitting another (moving) kart, as opposed to apply_stun's simpler "bounce back
 ## along your own facing," which only makes sense against something immovable.
-func apply_crash_impulse(impulse: Vector3) -> void:
+##
+## Physics only: it deliberately does not report a crash, because at the point it
+## runs nobody has worked out yet which of the two karts caused the thing. The
+## resolver decides that and calls _blame_ram. Returns false if a shield ate it.
+func apply_crash_impulse(impulse: Vector3) -> bool:
 	if _absorb_with_shield():
-		return
+		return false
 	crash_velocity += impulse
 	stun_timer = max(stun_timer, crash_stun_duration)
 	crash_cooldown_timer = crash_cooldown
 	_play_crash_smoke()
 	impact.emit(clamp(impulse.length() / 16.0, 0.3, 1.0))
 	hit_hazard.emit()
+	return true
 
 
 func _play_crash_smoke() -> void:
@@ -497,6 +609,9 @@ func _drop_oil() -> void:
 		return
 	var oil := _oil_scene.instantiate()
 	oil.lifetime = oil_lifetime
+	# So a kart that slides off this slick into something charges the crash to
+	# whoever dropped it rather than to nobody at all (see hazard_oil.gd).
+	oil.owner_kart = self
 	get_parent().add_child(oil)
 	var back: Vector3 = global_transform.basis.z
 	oil.global_position = global_position + back * oil_drop_distance
@@ -564,6 +679,8 @@ func set_checkpoint(pos: Vector3, rot: Vector3) -> void:
 
 
 func respawn() -> void:
+	# Getting knocked clean off the edge still counts against whoever knocked you.
+	crashed.emit(get_blame_source(), CrashBlame.Cause.FALL)
 	velocity = Vector3.ZERO
 	speed = 0.0
 	global_position = respawn_position

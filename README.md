@@ -6,10 +6,40 @@ A little kart driving game I made for my kids. Godot 4.7, split-screen, keyboard
 
 - **🏁 Race** — 3 laps around a procedurally built track with jumps, boost pads, oil
   slicks, and swinging log obstacles. Live position readout in the corner.
-- **💥 Bumper Arena** — no laps, no rules: an open rink with a crowd, scattered
-  crates, and a crash counter.
+- **💥 Bumper Arena** — no laps: an open rink with a crowd and scattered crates,
+  played as a **two-minute match**. Whoever *caused* the most crashes when the
+  clock runs out wins. Turn the timer off on the main menu for the old
+  open-ended rink that never ends.
 
 Either mode can be 1 or 2 players, with 0–3 AI bots joining the field.
+
+## Who caused that crash?
+
+The arena scores crashes you *made happen*, not crashes you were in — otherwise
+the kid getting bullied round the rink would be winning. So every crash in the
+game names a culprit, or nobody:
+
+| What happened | Who gets the point |
+|---|---|
+| One kart drives into another | Whoever was closing on the contact faster |
+| A genuine head-on, both flat out | Both of them |
+| A rocket connects | Whoever fired it |
+| You spin off someone's dropped oil into something | Whoever dropped it |
+| You get punted into a wall, a log, or a third kart | Whoever punted you |
+| You bin it into a wall all by yourself | Nobody |
+| A shield eats the hit | Nobody — it never landed |
+
+Blame carries for a beat or two after you're hit, which is what makes chain
+reactions work: rocket someone into a third kart and *both* crashes are yours.
+Ties at full time go to whoever was crashed into least.
+
+The rules live in `kart_controller.gd` (the `crashed` signal and the
+`mark_blame` / `get_blame_source` pair around it), with the tally in
+`arena_manager.gd`. They're fiddly enough to be worth pinning down:
+
+```
+godot --headless --path . --script tests/test_crash_blame.gd
+```
 
 ## Controls
 
@@ -46,7 +76,9 @@ closest and detour for item boxes. Each has a fixed name, color, and skill level
 ```
 autoload/    GameSettings (cross-scene state), AudioManager (SFX/ambience)
 scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads
-scripts/     one per scene, plus ai_driver.gd, item_kind.gd, track/arena builders
+scripts/     one per scene, plus ai_driver.gd, item_kind.gd, crash_blame.gd,
+             and the track/arena builders
+tests/       headless GDScript checks for the crash-attribution rules
 shaders/     toon.gdshader — the cel-shaded look everything shares
 ```
 

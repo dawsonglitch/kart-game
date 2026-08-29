@@ -1,7 +1,11 @@
 extends Node3D
-## Wires together the open "bumper arena" mode — no track, no laps, just a bounded
-## rink both players spawn into facing each other and drive around crashing into
-## each other, the scattered crates, and the boundary wall. Mirrors race.gd's
+## Wires together the open "bumper arena" mode — no track and no laps, just a
+## bounded rink both players spawn into facing each other and drive around
+## crashing into each other, the scattered crates, and the boundary wall. On a
+## two-minute clock (GameSettings.arena_timed), whoever *caused* the most crashes
+## when it runs out takes it — see arena_manager.gd for the scoring and
+## kart_controller.gd's `crashed` signal for how a crash gets pinned on someone
+## in the first place. Mirrors race.gd's
 ## split-screen/camera/HUD wiring; swaps RaceManager for ArenaManager and Track
 ## for the procedurally-built Rink. Bots (GameSettings.bot_count) join here too,
 ## running ai_driver.gd in CHASE mode — they hunt whoever is nearest rather than

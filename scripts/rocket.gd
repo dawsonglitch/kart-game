@@ -91,29 +91,22 @@ func _on_body_entered(body: Node3D) -> void:
 		away = away.normalized() if away.length() > 0.01 else Vector3.FORWARD
 		# A shielded target returns false — the shield's own clang already played,
 		# and a blocked rocket shouldn't sound like a hit or score like one.
-		if body.apply_stun(stun_duration, away * knockback_strength + Vector3.UP * 4.0):
+		#
+		# The firing kart is handed straight to apply_stun as the source, so the
+		# crash is charged to whoever pulled the trigger rather than going down as
+		# the victim's own bad driving. It also sticks to the victim for a beat, so
+		# a target punted into a wall or a third kart still scores for the shooter.
+		# Passing null if the firer was freed mid-flight leaves the hit uncredited
+		# rather than carrying a dangling reference into the scoreboard.
+		var shooter: Node3D = owner_kart if is_instance_valid(owner_kart) else null
+		if body.apply_stun(
+			stun_duration,
+			away * knockback_strength + Vector3.UP * 4.0,
+			CrashBlame.Cause.ROCKET,
+			shooter,
+		):
 			AudioManager.play_at("item_hit", global_position)
-			_credit_hit(body)
 	_explode()
-
-
-## Report the hit as a kart-vs-kart collision so the bumper arena's scoreboard
-## counts it — landing a rocket is the one thing in that mode that could shove
-## someone clear across the rink and previously score nothing at all.
-##
-## Emitted on both karts, matching kart_controller.gd's _resolve_kart_collision:
-## the arena counter tracks collisions each kart was *involved in*, not hits it
-## landed, so a physical bonk already credits both sides. A rocket hit reads the
-## same way. Race mode ignores kart_collision entirely, so this is inert there.
-func _credit_hit(victim: Node3D) -> void:
-	# Only possible to miss if the firing kart was freed mid-flight; the victim
-	# still takes the hit either way, it just goes uncredited rather than emitting
-	# a signal carrying a dangling reference.
-	if not is_instance_valid(owner_kart) or not owner_kart.has_signal("kart_collision"):
-		return
-	owner_kart.kart_collision.emit(victim)
-	if victim.has_signal("kart_collision"):
-		victim.kart_collision.emit(owner_kart)
 
 
 ## One shared exit path — spawns the same comic "BANG!" pop a kart-vs-kart crash

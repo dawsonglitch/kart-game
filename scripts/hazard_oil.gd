@@ -13,6 +13,11 @@ extends Area3D
 ## just blink out from under a kart that's about to hit it.
 @export var fade_duration: float = 1.5
 
+## The kart that dropped this slick, set by kart_controller.gd's _drop_oil().
+## Stays null for the slicks track_builder.gd paints onto the road — those are
+## part of the circuit, so spinning off one is nobody's fault but your own.
+var owner_kart: Node3D = null
+
 @onready var visual: MeshInstance3D = $Visual
 
 var _age: float = 0.0
@@ -39,3 +44,11 @@ func _on_body_entered(body: Node3D) -> void:
 	if body.has_method("apply_traction_loss"):
 		body.apply_traction_loss(traction_amount, duration)
 		AudioManager.play_at("skid", global_position, -8.0)
+		# Hitting oil isn't a crash by itself — it's a loss of grip. But whatever
+		# the kart slides into while that grip is gone is charged to whoever laid
+		# the slick, which is the only way a well-placed oil drop ever scores.
+		# The culprit is the kart that dropped this, settled at drop time — whatever
+		# is happening to it now, seconds later and elsewhere on the track, has
+		# nothing to do with who laid the slick.
+		if owner_kart != null and body.has_method("mark_blame"):
+			body.mark_blame(owner_kart, duration)

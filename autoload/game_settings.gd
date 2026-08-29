@@ -30,6 +30,16 @@ var player2_color: Color = Color(0.15, 0.4, 0.9)
 ## and arena.gd instance that many extra karts and attach an AIDriver to each.
 var bot_count: int = 2
 
+## Bumper arena only: run the rink as a timed match. On, the session ends after
+## ARENA_MATCH_SECONDS and whoever caused the most crashes takes it; off keeps
+## the original open-ended rink that never ends on its own. Crashes are
+## attributed and counted either way.
+var arena_timed: bool = true
+
+## How long a timed arena match runs. Two minutes is about as long as a round
+## holds a kid's attention, and short enough that losing one isn't a big deal.
+const ARENA_MATCH_SECONDS := 120.0
+
 ## Master switch for the item-box power-ups. Off gives the original pure-driving
 ## game, which is the better one for a kid still learning to steer.
 var items_enabled: bool = true
@@ -43,6 +53,8 @@ const BOT_PROFILES := [
 	{"name": "Rusty", "color": Color(0.85, 0.45, 0.15), "skill": 0.6},
 ]
 
-## Filled in by race_manager.gd when a race finishes:
-## [{player_id, display_name, total_time, is_ai}, ...] in finish order.
+## The last finished session's standings, best first. race_manager.gd fills it
+## with [{player_id, display_name, total_time, is_ai, place}, ...] in finish
+## order; arena_manager.gd fills it with [{player_id, display_name,
+## crashes_caused, crashes_taken, is_ai, place}, ...] when the clock runs out.
 var last_results: Array = []
