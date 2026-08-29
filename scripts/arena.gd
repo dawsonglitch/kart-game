@@ -110,6 +110,10 @@ func _spawn_bots(two_player: bool, field_size: int) -> void:
 		driver.skill = profile["skill"]
 		driver.arena_center = rink.get_arena_center()
 		driver.arena_radius = rink.get_arena_radius()
+		driver.climb_points = rink.get_climb_points()
+		var plateau: Dictionary = rink.get_plateau()
+		driver.obstacle_center = plateau["center"]
+		driver.obstacle_radius = plateau["radius"]
 		bot.add_child(driver)
 		bot.ai_driver = driver
 

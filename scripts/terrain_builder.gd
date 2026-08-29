@@ -1,9 +1,14 @@
 extends Terrain3D
-## Procedurally generates the ground: a heightmap that rises into hills near the
-## track — higher near the two ramps, since those are the highest points on the
-## track curve — and falls away to gentle rolling terrain further out, plus a
-## couple of texture-paint slots (grass / dirt-rock) blended by slope and height.
-## Everything here is script-generated, same philosophy as track_builder.gd.
+## Stamps the racetrack world's ground into an actual Terrain3D heightmap, and
+## paints it with grass / rock / dirt.
+##
+## The *shape* itself is not decided here any more — it lives in TrackGround
+## (scripts/track_ground.gd), which track_builder.gd builds first and seats all
+## of its own props on. This script just samples that same height field, so the
+## ground the karts drive on and the ground the trees, grandstands, barriers and
+## canyon pylons are standing on cannot drift apart. See track_ground.gd for what
+## the shape actually is (rolling noise, standalone mesas, the road's own
+## hillside cut, and carved canyons).
 ##
 ## Heights/texture-IDs are written one world-position at a time via
 ## Terrain3DData.set_height/set_control_base_id rather than built as an Image and
@@ -25,57 +30,29 @@ extends Terrain3D
 ## in kart_controller.gd still catches a kart that falls through, so this is a
 ## cosmetic risk (no visible ground under an off-track kart), not a functional one.
 
-const TERRAIN_SIZE := 320.0    # world-space width/height of the generated area (meters)
-const SAMPLE_STEP := 2.5       # meters between height samples (== vertex_spacing, see below)
-const TEXTURE_PAINT_STEP := 4.0
+## World-space width/height of the generated area, in metres. Big enough to hold
+## the ~280 x 290 m lap plus the ring of skyline hills in TrackGround's mesa list,
+## which sit out around 200 m from the origin — without the extra reach they'd be
+## sliced off at the world edge and read as cliffs into nothing.
+const TERRAIN_SIZE := 620.0
+const SAMPLE_STEP := 2.5       # metres between height samples (== vertex_spacing)
+const TEXTURE_PAINT_STEP := 5.0
 
-## The min-across-every-nearby-sample approach in _height_at (below) is safe
-## regardless of how generous these are — more reach just means more candidates
-## for the minimum, never a weaker guarantee — so these can go back to values that
-## actually look like a hillside, unlike the emergency tightened numbers from the
-## first attempt at this fix.
-const NEAR_ROAD_RADIUS := 10.0     # terrain stays clearly below the road within this distance
-const PEAK_RADIUS := 16.0          # hillside crest sits around here
-const HILL_RADIUS := 24.0          # beyond this, pure rolling terrain (no track influence)
-## Verified via a dense headless sweep (28 lateral samples x every 2m of track
-## length, matched against the road's real level, non-twisted extrusion —
-## CSGPolygon3D's path_rotation=1 means it does NOT use Curve3D's tilt/twist,
-## confirmed against Godot's own docs) that 1.5 already left zero true height
-## violations, worst-case ~1.5m of clearance. Bumped to 3.0 anyway: a chase
-## camera sitting low behind a kart can make terrain that's only ~1.5m below
-## curb height visually read as touching the road at a grazing angle, even
-## though it geometrically isn't — this is pure perspective headroom, not a
-## bug fix for an actual clipping bug (there wasn't one).
-const NEAR_ROAD_CLEARANCE := 3.0   # how far below the road surface terrain sits right next to it
-## Texture is forced to dirt out to this distance regardless of slope/height, so
-## grass never starts painting immediately at the curb — gives a visible dirt
+## Texture is forced to dirt within this distance of the road *edge*, so grass
+## never starts painting immediately at the kerb — it gives a visible dirt
 ## shoulder that reads clearly as "not the road" instead of grass appearing to
-## hug (and, at a distance/angle, seem to overlap) the road edge. Road curb ends
-## at x=6.4 local; this reaches a couple meters past that.
-const SHOULDER_RADIUS := 9.0
-const HILL_BONUS := 2.5            # how far above local track elevation a hillside crest rises
-const NOISE_HEIGHT := 2.0          # amplitude of the base rolling terrain noise
-
-## Curve3D.get_closest_offset() only finds the single nearest point *by arc
-## length*, which breaks down anywhere the track curves back near itself in world
-## space — chicanes, by definition, do exactly that. Fixed by precomputing this
-## many samples across the *entire* curve once and scoring every one of them
-## independently in _height_at rather than picking a single "closest" reference.
-const CURVE_SAMPLE_COUNT := 900
+## hug (and, at a distance and a low angle, seem to overlap) the road edge.
+const SHOULDER_WIDTH := 3.5
 
 const SLOPE_ROCK_THRESHOLD := 0.35 # 1 - normal.y beyond this counts as "steep"
-const HIGH_ROCK_THRESHOLD := 6.0   # elevation beyond this also counts as rocky hillside
+const HIGH_ROCK_THRESHOLD := 7.0   # elevation beyond this also counts as rocky hillside
 
 @export var track_path: NodePath = NodePath("../Track")
 
-var _track: Node3D
-var _noise := FastNoiseLite.new()
+var _ground: TrackGround
 
 
 func _ready() -> void:
-	_track = get_node_or_null(track_path)
-	_noise.seed = 2024
-	_noise.frequency = 0.02
 	vertex_spacing = SAMPLE_STEP
 	# Terrain3D defaults to DYNAMIC_GAME collision: physics collision only gets
 	# built in a window around whichever single camera set_camera() was given
@@ -88,15 +65,21 @@ func _ready() -> void:
 	collision.set_mode(Terrain3DCollision.FULL_GAME)
 	_setup_textures()
 	_prepare_regions()
-	var curve: Curve3D = null
-	if _track:
-		var path_node = _track.get("path")
-		if path_node:
-			curve = path_node.curve
-	var curve_samples := _build_curve_samples(curve)
-	_generate_heightmap(curve_samples)
+
+	# race.tscn lists Track before Terrain among World's children and Godot fires
+	# sibling _ready() calls in that order, so the track has already built its
+	# road and its height field by the time we get here.
+	var track := get_node_or_null(track_path)
+	if track and track.has_method("get_ground"):
+		_ground = track.get_ground()
+	if _ground == null:
+		# Nothing to follow — leave a flat, empty world rather than crashing.
+		data.update_maps()
+		return
+
+	_generate_heightmap()
 	data.calc_height_range(true)
-	_paint_textures(curve_samples)
+	_paint_textures()
 	# calc_height_range() only recalculates the terrain's overall height bounds —
 	# it does NOT refresh the actual render mesh/texture arrays. Without this
 	# call the visual terrain stays flat and untextured no matter what was
@@ -104,16 +87,6 @@ func _ready() -> void:
 	# report the real values (confirmed via headless readback) — the write
 	# succeeded, it just never got flushed to what's actually drawn.
 	data.update_maps()
-
-
-func _build_curve_samples(curve: Curve3D) -> PackedVector3Array:
-	var samples := PackedVector3Array()
-	if curve == null:
-		return samples
-	var length := curve.get_baked_length()
-	for i in range(CURVE_SAMPLE_COUNT):
-		samples.append(curve.sample_baked(length * float(i) / float(CURVE_SAMPLE_COUNT)))
-	return samples
 
 
 func _setup_textures() -> void:
@@ -124,15 +97,22 @@ func _setup_textures() -> void:
 	grass.albedo_texture = load("res://assets/textures/grass_albedo.jpg")
 	grass.uv_scale = 40.0
 
+	var rock := Terrain3DTextureAsset.new()
+	rock.id = 1
+	rock.name = "Rock"
+	rock.albedo_color = Color(0.9, 0.85, 0.75)
+	rock.albedo_texture = load("res://assets/textures/rock_albedo.jpg")
+	rock.uv_scale = 30.0
+
 	var dirt := Terrain3DTextureAsset.new()
-	dirt.id = 1
+	dirt.id = 2
 	dirt.name = "Dirt"
-	dirt.albedo_color = Color(0.9, 0.85, 0.75)
-	dirt.albedo_texture = load("res://assets/textures/rock_albedo.jpg")
-	dirt.uv_scale = 30.0
+	dirt.albedo_color = Color(0.88, 0.8, 0.66)
+	dirt.albedo_texture = load("res://assets/textures/road_albedo.jpg")
+	dirt.uv_scale = 25.0
 
 	var terrain_assets := Terrain3DAssets.new()
-	terrain_assets.set_texture_list([grass, dirt])
+	terrain_assets.set_texture_list([grass, rock, dirt])
 	assets = terrain_assets
 
 
@@ -150,82 +130,34 @@ func _prepare_regions() -> void:
 			data.add_region_blank(Vector2i(rx, rz), false)
 
 
-func _generate_heightmap(curve_samples: PackedVector3Array) -> void:
+func _generate_heightmap() -> void:
 	var half := TERRAIN_SIZE * 0.5
 	var wz := -half
 	while wz < half:
 		var wx := -half
 		while wx < half:
-			data.set_height(Vector3(wx, 0.0, wz), _height_at(wx, wz, curve_samples))
+			data.set_height(Vector3(wx, 0.0, wz), _ground.height_at(wx, wz))
 			wx += SAMPLE_STEP
 		wz += SAMPLE_STEP
 
 
-## The ground literally follows the track's shape: every curve sample within reach
-## independently proposes a height (low right beside its own road elevation, rising
-## to a small hillside crest, fading to open noise further out), and the terrain
-## takes the SAFEST (lowest) of every proposal, not just whichever sample happens
-## to be nearest.
-##
-## This replaces an earlier version that picked one "closest" sample and used it
-## for both the falloff distance AND the elevation reference — those two things
-## went out of sync anywhere the track curves back near itself (the forest chicane
-## especially), letting terrain rise above a *different* nearby stretch of road
-## than the one that was actually closest. Scoring every sample independently and
-## keeping the minimum can't have that failure mode: for a point actually on the
-## road, the correct local sample is also the closest one and dominates the
-## minimum, and no other, more distant sample can ever push the result *up* — only
-## down, which is always safe.
-func _height_at(wx: float, wz: float, curve_samples: PackedVector3Array) -> float:
-	var base: float = _noise.get_noise_2d(wx, wz) * NOISE_HEIGHT
-	if curve_samples.is_empty():
-		return base
-
-	var result := base
-	for p in curve_samples:
-		var d := Vector2(wx - p.x, wz - p.z).length()
-		if d >= HILL_RADIUS:
-			continue
-
-		var near_height := p.y - NEAR_ROAD_CLEARANCE
-		var peak_height := p.y + HILL_BONUS
-		var contribution: float
-		if d < NEAR_ROAD_RADIUS:
-			contribution = near_height
-		elif d < PEAK_RADIUS:
-			var t := (d - NEAR_ROAD_RADIUS) / (PEAK_RADIUS - NEAR_ROAD_RADIUS)
-			contribution = lerp(near_height, peak_height, smoothstep(0.0, 1.0, t))
-		else:
-			var t := (d - PEAK_RADIUS) / (HILL_RADIUS - PEAK_RADIUS)
-			contribution = lerp(peak_height, base, smoothstep(0.0, 1.0, t))
-
-		result = min(result, contribution)
-
-	return result
-
-
-func _within_shoulder(wx: float, wz: float, curve_samples: PackedVector3Array) -> bool:
-	for p in curve_samples:
-		if Vector2(wx - p.x, wz - p.z).length() < SHOULDER_RADIUS:
-			return true
-	return false
-
-
-func _paint_textures(curve_samples: PackedVector3Array) -> void:
+func _paint_textures() -> void:
 	var half := TERRAIN_SIZE * 0.5
 	var wz := -half
 	while wz < half:
 		var wx := -half
 		while wx < half:
 			var pos := Vector3(wx, 0.0, wz)
-			var rocky: bool
-			if _within_shoulder(wx, wz, curve_samples):
-				rocky = true
+			var id: int
+			if _ground.distance_to_road_edge(wx, wz) < SHOULDER_WIDTH:
+				id = 2 # dirt shoulder hugging the kerb
 			else:
 				var normal: Vector3 = data.get_normal(pos)
 				var slope := 1.0 - normal.y
 				var h := data.get_height(pos)
-				rocky = slope > SLOPE_ROCK_THRESHOLD or h > HIGH_ROCK_THRESHOLD
-			data.set_control_base_id(pos, 1 if rocky else 0)
+				# Canyon walls and the tops of the skyline hills go to bare rock;
+				# everything gentle and low stays grass.
+				id = 1 if (slope > SLOPE_ROCK_THRESHOLD or h > HIGH_ROCK_THRESHOLD) else 0
+			data.set_control_base_id(pos, id)
 			wx += TEXTURE_PAINT_STEP
 		wz += TEXTURE_PAINT_STEP

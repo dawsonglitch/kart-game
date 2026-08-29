@@ -21,6 +21,13 @@ const STEER_FULL_LOCK := 0.6
 ## Considered stuck after this long below STUCK_SPEED while trying to drive.
 const STUCK_SPEED := 1.5
 const STUCK_TIME := 1.2
+## ...or after covering less ground than this over the same window, whatever the
+## speedometer says. Two bots that pick each other as targets meet head-on and
+## push, wheels turning, `speed` sitting comfortably above STUCK_SPEED and neither
+## of them going anywhere: measured, a pair stayed locked together in the middle of
+## the arena for eighty seconds of a two-minute match. Net displacement notices
+## what speed alone cannot.
+const STUCK_DISPLACEMENT := 3.0
 ## How long the reverse-and-turn recovery runs before trying forward again.
 const UNSTICK_TIME := 0.9
 
@@ -33,9 +40,23 @@ const LOOKAHEAD_PER_SPEED := 0.75
 ## CHASE: start steering away from the wall once past this fraction of the rink
 ## radius.
 const WALL_AVOID_FRACTION := 0.82
+## CHASE: where "away from the wall" and "nothing better to do" actually aim, as a
+## fraction of the rink radius. NOT the centre: the middle of the arena is now a
+## plateau with sides too steep to drive up, so a bot sent at the centre point
+## just noses into a cliff and waits for the stuck timer. This ring is outside the
+## plateau and inside the banking.
+const OPEN_GROUND_FRACTION := 0.45
 ## CHASE: how far an empty-handed bot will detour to grab an item box. Race-mode
 ## bots need no equivalent — the boxes sit on the racing line they already follow.
 const BOX_SEEK_RANGE := 70.0
+## CHASE: how much clearance to leave when steering round the plateau.
+const OBSTACLE_MARGIN := 6.0
+## CHASE: a target this far above us is on top of the plateau and cannot be
+## reached by driving at it, so head for a ramp instead.
+const OUT_OF_REACH_HEIGHT := 4.0
+## CHASE: once this close to the foot of a ramp, stop aiming at the ramp and aim up
+## it, or the bot arrives at the bottom and sits there having got what it asked for.
+const RAMP_FOOT_RANGE := 20.0
 
 ## Longest a bot will sit on an item waiting for its ideal moment. Without this a
 ## bot can hold one indefinitely: an arena bot orbiting a target is never "going
@@ -57,6 +78,13 @@ var path: Path3D
 ## CHASE mode: the rink's centre and radius, used for wall avoidance.
 var arena_center: Vector3 = Vector3.ZERO
 var arena_radius: float = 0.0
+## CHASE mode: the foot of each ramp up the central plateau, from
+## arena_builder.gd's get_climb_points().
+var climb_points: PackedVector3Array = PackedVector3Array()
+## CHASE mode: the plateau in the middle, which cannot be driven through. Set from
+## arena_builder.gd's get_plateau().
+var obstacle_center: Vector3 = Vector3.ZERO
+var obstacle_radius: float = 0.0
 
 ## Per-bot lateral offset from the exact centre line, so a field of bots fans out
 ## across the road instead of driving nose-to-tail in one groove.
@@ -65,6 +93,15 @@ var lane_offset: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _stuck_timer: float = 0.0
 var _unstick_timer: float = 0.0
+## Where we were when the current displacement window opened, and how long ago.
+var _window_origin: Vector3 = Vector3.ZERO
+var _window_time: float = 0.0
+var _window_started: bool = false
+## Which way round the plateau we committed to, +1 or -1, or 0 when we are not
+## going round it at all. Without committing, the two tangent options swap over as
+## the bot moves and it oscillates on the spot instead of sweeping round — measured,
+## one bot spent seventy seconds rocking between two headings at the cliff base.
+var _avoid_side: float = 0.0
 var _unstick_steer: float = 1.0
 ## Counts down after picking up an item — bots don't fire the instant they grab
 ## something, which would be both inhuman and unfair.
@@ -166,7 +203,8 @@ func _curve_heading(curve: Curve3D, length: float, offset: float) -> Vector3:
 func _drive_chase(kart: Node3D, controls: Dictionary) -> void:
 	# Empty-handed, with a box in reach? Go shopping first — otherwise the arena's
 	# power-ups would only ever be picked up by accident on the way to a ram.
-	var aim: Vector3 = arena_center
+	var open_ground: Vector3 = _open_ground_near(kart)
+	var aim: Vector3 = open_ground
 	var box := _nearest_available_box(kart) if kart.held_item == ItemKind.Kind.NONE else null
 	if box:
 		aim = box.global_position
@@ -174,16 +212,26 @@ func _drive_chase(kart: Node3D, controls: Dictionary) -> void:
 		var target_kart := _nearest_other_kart(kart)
 		if target_kart:
 			aim = target_kart.global_position
+			# Whoever we are chasing may be up on the plateau, whose sides are
+			# deliberately unclimbable. Driving at them is then the one thing that
+			# definitely doesn't work; take a ramp instead.
+			if aim.y - kart.global_position.y > OUT_OF_REACH_HEIGHT:
+				aim = _climb_aim(kart, aim.y)
 
 	# Wall avoidance wins over the chase: near the boundary, blend the aim point
-	# back toward the middle so the bot peels off instead of grinding the wall.
+	# back toward open ground so the bot peels off instead of grinding the wall.
 	if arena_radius > 0.0:
 		var from_center: Vector3 = kart.global_position - arena_center
 		from_center.y = 0.0
 		var edge_ratio: float = from_center.length() / arena_radius
 		if edge_ratio > WALL_AVOID_FRACTION:
 			var pull: float = clamp((edge_ratio - WALL_AVOID_FRACTION) / (1.0 - WALL_AVOID_FRACTION), 0.0, 1.0)
-			aim = aim.lerp(arena_center, pull)
+			aim = aim.lerp(open_ground, pull)
+
+	# Last, because it applies to wherever we ended up aiming: the plateau in the
+	# middle is a cliff, and a bot whose target is on the far side of it will drive
+	# into the rock and sit there. Go round.
+	aim = _steer_around_obstacle(kart, aim)
 
 	controls["steer"] = _steer_toward(kart, aim)
 	# Flat out unless it's badly mis-aimed — a bot spinning in place at full
@@ -192,6 +240,88 @@ func _drive_chase(kart: Node3D, controls: Dictionary) -> void:
 	var target_speed: float = kart.max_speed * lerp(0.6, 1.0, clamp(skill, 0.0, 1.0))
 	controls["throttle"] = absf(controls["steer"]) < 0.9 or speed < target_speed * 0.4
 	controls["brake"] = false
+
+
+## Replaces an aim point whose straight line crosses the plateau with a point on
+## the plateau's edge, picked on whichever side turns us less. Purely local — no
+## path is planned — but that is all it takes to get round one round obstacle.
+func _steer_around_obstacle(kart: Node3D, aim: Vector3) -> Vector3:
+	if obstacle_radius <= 0.0:
+		return aim
+	var here := Vector2(kart.global_position.x, kart.global_position.z)
+	var goal := Vector2(aim.x, aim.z)
+	var center := Vector2(obstacle_center.x, obstacle_center.z)
+	var keep_out: float = obstacle_radius + OBSTACLE_MARGIN
+	if _distance_to_segment(center, here, goal) >= keep_out:
+		_avoid_side = 0.0
+		return aim
+
+	var to_center: Vector2 = center - here
+	var distance: float = to_center.length()
+	if distance <= keep_out:
+		# Already up against it: the only useful direction is straight back out.
+		var out: Vector2 = (here - center)
+		if out.length() < 0.01:
+			out = Vector2(1.0, 0.0)
+		var escape: Vector2 = center + out.normalized() * (keep_out + 20.0)
+		return Vector3(escape.x, aim.y, escape.y)
+
+	# Both tangent lines from here to the keep-out circle. The side is chosen once,
+	# on whichever turns us less, and then held until we no longer need to go round
+	# at all.
+	var offset: float = asin(clamp(keep_out / distance, -1.0, 1.0))
+	var reach: float = sqrt(max(distance * distance - keep_out * keep_out, 0.0))
+	if _avoid_side == 0.0:
+		var wanted: Vector2 = (goal - here).normalized()
+		var best_score := -INF
+		for side: float in [-1.0, 1.0]:
+			var candidate: Vector2 = here + to_center.normalized().rotated(side * offset) * reach
+			var score: float = wanted.dot((candidate - here).normalized())
+			if score > best_score:
+				best_score = score
+				_avoid_side = side
+	var target: Vector2 = here + to_center.normalized().rotated(_avoid_side * offset) * reach
+	return Vector3(target.x, aim.y, target.y)
+
+
+static func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var length_sq: float = ab.length_squared()
+	if length_sq < 0.0001:
+		return point.distance_to(a)
+	var t: float = clamp((point - a).dot(ab) / length_sq, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
+
+
+## The way up onto the plateau: the nearest ramp foot while we are still out on
+## the flat, and then the middle of the plateau — which is straight up the ramp we
+## are now standing on — once we have reached it.
+func _climb_aim(kart: Node3D, target_height: float) -> Vector3:
+	var best: Vector3 = arena_center
+	var best_distance := INF
+	for point in climb_points:
+		var d: float = kart.global_position.distance_to(point)
+		if d < best_distance:
+			best_distance = d
+			best = point
+	if climb_points.is_empty():
+		return arena_center
+	if best_distance > RAMP_FOOT_RANGE:
+		return best
+	return Vector3(arena_center.x, target_height, arena_center.z)
+
+
+## The nearest point on the open-ground ring, i.e. straight inwards from wherever
+## the kart is now. Used both as the fallback aim and as what wall avoidance
+## steers towards.
+func _open_ground_near(kart: Node3D) -> Vector3:
+	if arena_radius <= 0.0:
+		return arena_center
+	var outward: Vector3 = kart.global_position - arena_center
+	outward.y = 0.0
+	if outward.length() < 1.0:
+		return arena_center
+	return arena_center + outward.normalized() * arena_radius * OPEN_GROUND_FRACTION
 
 
 ## Closest item box still holding something, within BOX_SEEK_RANGE.
@@ -247,17 +377,36 @@ func _steer_toward(kart: Node3D, target: Vector3) -> float:
 func _update_stuck_state(kart: Node3D, delta: float) -> void:
 	if _unstick_timer > 0.0:
 		return
-	if not kart.can_drive:
+	if not kart.can_drive or not _window_started:
 		_stuck_timer = 0.0
+		_window_time = 0.0
+		_window_origin = kart.global_position
+		_window_started = true
 		return
+
 	if absf(kart.speed) < STUCK_SPEED:
 		_stuck_timer += delta
 		if _stuck_timer >= STUCK_TIME:
-			_stuck_timer = 0.0
-			_unstick_timer = UNSTICK_TIME
-			_unstick_steer = 1.0 if _rng.randf() < 0.5 else -1.0
+			_begin_unstick()
+			return
 	else:
 		_stuck_timer = 0.0
+
+	# Second, independent test: how far have we actually got in the last window?
+	_window_time += delta
+	if _window_time >= STUCK_TIME:
+		var moved: float = kart.global_position.distance_to(_window_origin)
+		_window_time = 0.0
+		_window_origin = kart.global_position
+		if moved < STUCK_DISPLACEMENT:
+			_begin_unstick()
+
+
+func _begin_unstick() -> void:
+	_stuck_timer = 0.0
+	_window_time = 0.0
+	_unstick_timer = UNSTICK_TIME
+	_unstick_steer = 1.0 if _rng.randf() < 0.5 else -1.0
 
 
 ## Whether to press the item button this frame. Each item has a condition worth
