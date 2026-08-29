@@ -1,0 +1,470 @@
+[gd_scene load_steps=45 format=3 uid="uid://cq0kart0001"]
+
+[ext_resource type="Script" path="res://scripts/kart_controller.gd" id="1"]
+[ext_resource type="Shader" path="res://shaders/toon.gdshader" id="2"]
+[ext_resource type="Texture2D" path="res://assets/textures/metal_albedo.jpg" id="3"]
+[ext_resource type="Texture2D" path="res://assets/textures/fabric_albedo.jpg" id="4"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(1.5, 1.0, 2.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_lower"]
+size = Vector3(1.4, 0.5, 2.1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_body"]
+albedo_color = Color(0.85, 0.15, 0.15, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_cabin"]
+size = Vector3(1.15, 0.55, 1.55)
+
+[sub_resource type="BoxMesh" id="BoxMesh_hood"]
+size = Vector3(1.2, 0.28, 0.85)
+
+[sub_resource type="BoxMesh" id="BoxMesh_windshield"]
+size = Vector3(1.05, 0.5, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="Mat_windshield"]
+albedo_color = Color(0.6, 0.85, 1, 0.8)
+transparency = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_bumper"]
+size = Vector3(1.35, 0.18, 0.15)
+
+[sub_resource type="ShaderMaterial" id="Mat_trim"]
+shader = ExtResource("2")
+shader_parameter/albedo_color = Color(0.35, 0.35, 0.38, 1)
+shader_parameter/albedo_texture = ExtResource("3")
+shader_parameter/uv_scale = Vector2(1.0, 1.0)
+shader_parameter/band_count = 2
+shader_parameter/min_brightness = 0.35
+shader_parameter/rim_amount = 0.15
+shader_parameter/metallic = 0.8
+shader_parameter/specular_sharpness = 64.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_grille"]
+size = Vector3(0.85, 0.22, 0.06)
+
+[sub_resource type="BoxMesh" id="BoxMesh_headlight"]
+size = Vector3(0.16, 0.14, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="Mat_headlight"]
+albedo_color = Color(1, 0.95, 0.8, 1)
+emission_enabled = true
+emission = Color(1, 0.95, 0.7, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="BoxMesh" id="BoxMesh_taillight"]
+size = Vector3(0.14, 0.12, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="Mat_taillight"]
+albedo_color = Color(0.9, 0.1, 0.1, 1)
+emission_enabled = true
+emission = Color(0.9, 0.1, 0.05, 1)
+emission_energy_multiplier = 1.2
+
+[sub_resource type="BoxMesh" id="BoxMesh_flare"]
+size = Vector3(0.22, 0.2, 1.6)
+
+[sub_resource type="CylinderMesh" id="Cyl_wheel"]
+top_radius = 0.32
+bottom_radius = 0.32
+height = 0.28
+
+[sub_resource type="StandardMaterial3D" id="Mat_wheel"]
+albedo_color = Color(0.08, 0.08, 0.08, 1)
+
+[sub_resource type="CylinderMesh" id="Cyl_rollpost"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 0.5
+
+[sub_resource type="CylinderMesh" id="Cyl_rollbar"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 1.05
+
+[sub_resource type="CylinderMesh" id="Cyl_antenna"]
+top_radius = 0.02
+bottom_radius = 0.02
+height = 0.9
+
+[sub_resource type="StandardMaterial3D" id="Mat_smoke"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.6, 0.58, 0.55, 0.75)
+
+[sub_resource type="SphereMesh" id="SphereMesh_smoke"]
+material = SubResource("Mat_smoke")
+radius = 0.35
+height = 0.7
+
+[sub_resource type="ParticleProcessMaterial" id="ProcessMat_smoke"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 2.0
+initial_velocity_max = 4.5
+gravity = Vector3(0, 0.6, 0)
+damping_min = 3.0
+damping_max = 5.0
+scale_min = 0.5
+scale_max = 1.3
+angular_velocity_min = -90.0
+angular_velocity_max = 90.0
+color = Color(0.6, 0.58, 0.55, 0.75)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sidewindow"]
+size = Vector3(0.03, 0.4, 1.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_handle"]
+size = Vector3(0.05, 0.05, 0.18)
+
+[sub_resource type="BoxMesh" id="BoxMesh_doorseam"]
+size = Vector3(0.015, 0.45, 0.02)
+
+[sub_resource type="CylinderMesh" id="Cyl_mirror_post"]
+top_radius = 0.025
+bottom_radius = 0.025
+height = 0.15
+
+[sub_resource type="BoxMesh" id="BoxMesh_mirror_lens"]
+size = Vector3(0.1, 0.12, 0.03)
+
+[sub_resource type="StandardMaterial3D" id="Mat_mirror"]
+albedo_color = Color(0.85, 0.9, 0.95, 1)
+metallic = 1.0
+roughness = 0.05
+
+[sub_resource type="BoxMesh" id="BoxMesh_stripe_hood"]
+size = Vector3(0.3, 0.02, 0.8)
+
+[sub_resource type="BoxMesh" id="BoxMesh_stripe_roof"]
+size = Vector3(0.3, 0.02, 1.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_stripe"]
+albedo_color = Color(0.95, 0.95, 0.92, 1)
+metallic = 0.3
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="BoxMesh_underglow"]
+size = Vector3(0.04, 0.05, 1.9)
+
+[sub_resource type="CylinderMesh" id="Cyl_hubcap"]
+top_radius = 0.14
+bottom_radius = 0.14
+height = 0.03
+
+[sub_resource type="BoxMesh" id="BoxMesh_mudflap"]
+size = Vector3(0.26, 0.32, 0.03)
+
+[sub_resource type="CylinderMesh" id="Cyl_exhaust"]
+top_radius = 0.045
+bottom_radius = 0.045
+height = 0.22
+
+[sub_resource type="CylinderMesh" id="Cyl_towhook"]
+top_radius = 0.04
+bottom_radius = 0.04
+height = 0.15
+
+[sub_resource type="BoxMesh" id="BoxMesh_lightbar"]
+size = Vector3(0.9, 0.06, 0.08)
+
+[sub_resource type="BoxMesh" id="BoxMesh_spotlight"]
+size = Vector3(0.08, 0.06, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="Mat_spotlight"]
+albedo_color = Color(1, 1, 0.95, 1)
+emission_enabled = true
+emission = Color(1, 1, 0.9, 1)
+emission_energy_multiplier = 1.3
+
+[sub_resource type="CylinderMesh" id="Cyl_sparecover"]
+top_radius = 0.34
+bottom_radius = 0.34
+height = 0.04
+
+[sub_resource type="ShaderMaterial" id="Mat_sparecover"]
+shader = ExtResource("2")
+shader_parameter/albedo_color = Color(0.55, 0.5, 0.4, 1)
+shader_parameter/albedo_texture = ExtResource("4")
+shader_parameter/uv_scale = Vector2(2.5, 2.5)
+shader_parameter/band_count = 2
+shader_parameter/min_brightness = 0.4
+shader_parameter/rim_amount = 0.1
+
+[node name="Kart" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 3
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_body")
+
+[node name="Chassis" type="Node3D" parent="."]
+
+[node name="LowerBody" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)
+mesh = SubResource("BoxMesh_lower")
+material_override = SubResource("Mat_body")
+
+[node name="Cabin" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0.05)
+mesh = SubResource("BoxMesh_cabin")
+material_override = SubResource("Mat_body")
+
+[node name="Hood" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.68, -0.85)
+mesh = SubResource("BoxMesh_hood")
+material_override = SubResource("Mat_body")
+
+[node name="Windshield" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.34, 0, -0.34, 0.94, 0, 0.95, -0.62)
+mesh = SubResource("BoxMesh_windshield")
+material_override = SubResource("Mat_windshield")
+
+[node name="SideWindow_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.59, 0.95, 0.05)
+mesh = SubResource("BoxMesh_sidewindow")
+material_override = SubResource("Mat_windshield")
+
+[node name="SideWindow_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.59, 0.95, 0.05)
+mesh = SubResource("BoxMesh_sidewindow")
+material_override = SubResource("Mat_windshield")
+
+[node name="FrontBumper" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.28, -1.12)
+mesh = SubResource("BoxMesh_bumper")
+material_override = SubResource("Mat_trim")
+
+[node name="RearBumper" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.28, 1.12)
+mesh = SubResource("BoxMesh_bumper")
+material_override = SubResource("Mat_trim")
+
+[node name="Grille" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, -1.15)
+mesh = SubResource("BoxMesh_grille")
+material_override = SubResource("Mat_trim")
+
+[node name="Headlight_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.45, -1.16)
+mesh = SubResource("BoxMesh_headlight")
+material_override = SubResource("Mat_headlight")
+
+[node name="Headlight_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.45, -1.16)
+mesh = SubResource("BoxMesh_headlight")
+material_override = SubResource("Mat_headlight")
+
+[node name="TailLight_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.45, 1.16)
+mesh = SubResource("BoxMesh_taillight")
+material_override = SubResource("Mat_taillight")
+
+[node name="TailLight_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.45, 1.16)
+mesh = SubResource("BoxMesh_taillight")
+material_override = SubResource("Mat_taillight")
+
+[node name="SideFlare_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.76, 0.35, 0)
+mesh = SubResource("BoxMesh_flare")
+material_override = SubResource("Mat_trim")
+
+[node name="SideFlare_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.76, 0.35, 0)
+mesh = SubResource("BoxMesh_flare")
+material_override = SubResource("Mat_trim")
+
+[node name="DoorHandle_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.735, 0.45, 0.1)
+mesh = SubResource("BoxMesh_handle")
+material_override = SubResource("Mat_trim")
+
+[node name="DoorHandle_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.735, 0.45, 0.1)
+mesh = SubResource("BoxMesh_handle")
+material_override = SubResource("Mat_trim")
+
+[node name="DoorSeam_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.705, 0.4, 0.15)
+mesh = SubResource("BoxMesh_doorseam")
+material_override = SubResource("Mat_trim")
+
+[node name="DoorSeam_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.705, 0.4, 0.15)
+mesh = SubResource("BoxMesh_doorseam")
+material_override = SubResource("Mat_trim")
+
+[node name="MirrorPost_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.62, 0.98, -0.55)
+mesh = SubResource("Cyl_mirror_post")
+material_override = SubResource("Mat_trim")
+
+[node name="MirrorPost_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.62, 0.98, -0.55)
+mesh = SubResource("Cyl_mirror_post")
+material_override = SubResource("Mat_trim")
+
+[node name="MirrorLens_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.73, 1.05, -0.55)
+mesh = SubResource("BoxMesh_mirror_lens")
+material_override = SubResource("Mat_mirror")
+
+[node name="MirrorLens_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.73, 1.05, -0.55)
+mesh = SubResource("BoxMesh_mirror_lens")
+material_override = SubResource("Mat_mirror")
+
+[node name="StripeHood" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.831, -0.85)
+mesh = SubResource("BoxMesh_stripe_hood")
+material_override = SubResource("Mat_stripe")
+
+[node name="StripeRoof" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.236, 0.05)
+mesh = SubResource("BoxMesh_stripe_roof")
+material_override = SubResource("Mat_stripe")
+
+[node name="Underglow_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.16, 0)
+mesh = SubResource("BoxMesh_underglow")
+
+[node name="Underglow_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.16, 0)
+mesh = SubResource("BoxMesh_underglow")
+
+[node name="MudFlap_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.72, 0.18, 0.95)
+mesh = SubResource("BoxMesh_mudflap")
+material_override = SubResource("Mat_trim")
+
+[node name="MudFlap_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.72, 0.18, 0.95)
+mesh = SubResource("BoxMesh_mudflap")
+material_override = SubResource("Mat_trim")
+
+[node name="Exhaust" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0.5, 0.2, 1.18)
+mesh = SubResource("Cyl_exhaust")
+material_override = SubResource("Mat_trim")
+
+[node name="TowHook" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.22, -1.2)
+mesh = SubResource("Cyl_towhook")
+material_override = SubResource("Mat_trim")
+
+[node name="RollPost_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.48, 1.47, 0.55)
+mesh = SubResource("Cyl_rollpost")
+material_override = SubResource("Mat_trim")
+
+[node name="RollPost_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.48, 1.47, 0.55)
+mesh = SubResource("Cyl_rollpost")
+material_override = SubResource("Mat_trim")
+
+[node name="RollBar" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1.72, 0.55)
+mesh = SubResource("Cyl_rollbar")
+material_override = SubResource("Mat_trim")
+
+[node name="LightBar" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.78, 0.5)
+mesh = SubResource("BoxMesh_lightbar")
+material_override = SubResource("Mat_trim")
+
+[node name="Spotlight_L" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 1.78, 0.46)
+mesh = SubResource("BoxMesh_spotlight")
+material_override = SubResource("Mat_spotlight")
+
+[node name="Spotlight_R" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, 1.78, 0.46)
+mesh = SubResource("BoxMesh_spotlight")
+material_override = SubResource("Mat_spotlight")
+
+[node name="SpareTire" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.66, 1.28)
+mesh = SubResource("Cyl_wheel")
+material_override = SubResource("Mat_wheel")
+
+[node name="SpareTireCover" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.66, 1.43)
+mesh = SubResource("Cyl_sparecover")
+material_override = SubResource("Mat_sparecover")
+
+[node name="HubCap_Spare" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0.66, 1.46)
+mesh = SubResource("Cyl_hubcap")
+material_override = SubResource("Mat_trim")
+
+[node name="Antenna" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0.99, 0.12, 0, -0.12, 0.99, 0, 0, 0, 1, -0.66, 1.0, -1.0)
+mesh = SubResource("Cyl_antenna")
+material_override = SubResource("Mat_trim")
+
+[node name="WheelFL" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, -0.72, 0.32, -0.68)
+mesh = SubResource("Cyl_wheel")
+material_override = SubResource("Mat_wheel")
+
+[node name="WheelFR" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, 0.72, 0.32, -0.68)
+mesh = SubResource("Cyl_wheel")
+material_override = SubResource("Mat_wheel")
+
+[node name="WheelBL" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, -0.72, 0.32, 0.68)
+mesh = SubResource("Cyl_wheel")
+material_override = SubResource("Mat_wheel")
+
+[node name="WheelBR" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, 0.72, 0.32, 0.68)
+mesh = SubResource("Cyl_wheel")
+material_override = SubResource("Mat_wheel")
+
+[node name="HubCap_FL" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, -0.87, 0.32, -0.68)
+mesh = SubResource("Cyl_hubcap")
+material_override = SubResource("Mat_trim")
+
+[node name="HubCap_FR" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, 0.87, 0.32, -0.68)
+mesh = SubResource("Cyl_hubcap")
+material_override = SubResource("Mat_trim")
+
+[node name="HubCap_BL" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, -0.87, 0.32, 0.68)
+mesh = SubResource("Cyl_hubcap")
+material_override = SubResource("Mat_trim")
+
+[node name="HubCap_BR" type="MeshInstance3D" parent="Chassis"]
+transform = Transform3D(0, 0, 1, 1, 0, 0, 0, 1, 0, 0.87, 0.32, 0.68)
+mesh = SubResource("Cyl_hubcap")
+material_override = SubResource("Mat_trim")
+
+[node name="SlopeRay" type="RayCast3D" parent="."]
+target_position = Vector3(0, -1.2, 0)
+collision_mask = 1
+
+[node name="NameTag" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
+billboard = 2
+no_depth_test = true
+font_size = 48
+outline_size = 10
+text = "Player 1"
+
+[node name="CrashSmoke" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
+emitting = false
+amount = 14
+lifetime = 0.6
+one_shot = true
+explosiveness = 0.85
+randomness = 0.4
+process_material = SubResource("ProcessMat_smoke")
+draw_pass_1 = SubResource("SphereMesh_smoke")

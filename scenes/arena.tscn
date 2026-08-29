@@ -1,0 +1,99 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/arena.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/arena_manager.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/arena_builder.gd" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/kart.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/pause_menu.tscn" id="7"]
+[ext_resource type="Script" path="res://scripts/sky_clouds_builder.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/arena_terrain_builder.gd" id="9"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
+sky_top_color = Color(0.3, 0.62, 1, 1)
+sky_horizon_color = Color(0.78, 0.9, 1, 1)
+ground_bottom_color = Color(0.32, 0.55, 0.32, 1)
+ground_horizon_color = Color(0.62, 0.8, 0.6, 1)
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("SkyMat_1")
+
+[sub_resource type="Environment" id="Env_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+glow_enabled = true
+glow_intensity = 0.7
+glow_bloom = 0.12
+glow_blend_mode = 0
+ssao_enabled = true
+ssao_radius = 1.5
+
+[node name="Arena" type="Node3D"]
+script = ExtResource("1")
+
+[node name="ArenaManager" type="Node" parent="."]
+script = ExtResource("2")
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="Env" type="WorldEnvironment" parent="World"]
+environment = SubResource("Env_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="World"]
+position = Vector3(0, 30, 0)
+rotation_degrees = Vector3(-55, -30, 0)
+shadow_enabled = true
+shadow_blur = 1.5
+directional_shadow_mode = 2
+directional_shadow_blend_splits = true
+directional_shadow_max_distance = 300.0
+
+[node name="Terrain" type="Terrain3D" parent="World"]
+script = ExtResource("9")
+
+[node name="Rink" type="Node3D" parent="World"]
+script = ExtResource("4")
+
+[node name="CloudsDriver" type="Node" parent="World"]
+script = ExtResource("8")
+
+[node name="Kart1" parent="World" instance=ExtResource("5")]
+player_id = 1
+kart_color = Color(0.85, 0.15, 0.15, 1)
+
+[node name="Kart2" parent="World" instance=ExtResource("5")]
+player_id = 2
+kart_color = Color(0.15, 0.4, 0.9, 1)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="ViewportContainer1" type="SubViewportContainer" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+stretch = true
+
+[node name="SubViewport1" type="SubViewport" parent="UI/ViewportContainer1"]
+handle_input_locally = false
+size = Vector2i(1280, 720)
+
+[node name="Cam1" type="Camera3D" parent="UI/ViewportContainer1/SubViewport1"]
+script = ExtResource("3")
+
+[node name="ViewportContainer2" type="SubViewportContainer" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+stretch = true
+
+[node name="SubViewport2" type="SubViewport" parent="UI/ViewportContainer2"]
+handle_input_locally = false
+size = Vector2i(1280, 720)
+
+[node name="Cam2" type="Camera3D" parent="UI/ViewportContainer2/SubViewport2"]
+script = ExtResource("3")
+
+[node name="HUD1" parent="UI" instance=ExtResource("6")]
+
+[node name="HUD2" parent="UI" instance=ExtResource("6")]
+
+[node name="PauseMenu" parent="UI" instance=ExtResource("7")]
