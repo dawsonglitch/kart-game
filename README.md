@@ -4,10 +4,12 @@ A little kart driving game I made for my kids. Godot 4.7, split-screen, keyboard
 
 ## Modes
 
-- **🏁 Race** — 3 laps around a procedurally built track with jumps, boost pads, oil
-  slicks, and swinging log obstacles. Live position readout in the corner.
-- **💥 Bumper Arena** — no laps: an open rink with a crowd and scattered crates,
-  played as a **two-minute match**. Whoever *caused* the most crashes when the
+- **🏁 Race** — 3 laps around a procedurally built circuit with banked corners, a
+  road that widens and pinches, two big jumps, a viaduct over a gorge, boost pads,
+  oil slicks, and swinging log obstacles. Live position readout in the corner.
+- **💥 Bumper Arena** — no laps: an open rink built around a plateau you can only
+  reach up four ramps, with a banked rim, a crater, jump kickers and a pillar
+  grove, played as a **two-minute match**. Whoever *caused* the most crashes when the
   clock runs out wins. Turn the timer off on the main menu for the old
   open-ended rink that never ends.
 
@@ -41,6 +43,21 @@ The rules live in `kart_controller.gd` (the `crashed` signal and the
 godot --headless --path . --script tests/test_crash_blame.gd
 ```
 
+The generated maps have their own checks — structure and placement, plus a slower
+one that puts the AI field on the track and watches it drive:
+
+```
+godot --headless --path . --script tests/test_track_map.gd
+```
+
+```
+godot --headless --path . --script tests/test_arena_map.gd
+```
+
+```
+godot --headless --path . --script tests/test_track_driving.gd
+```
+
 ## Controls
 
 | | Steer | Go | Brake / reverse | Use item |
@@ -71,20 +88,55 @@ and unstick themselves if they get wedged; in the arena they hunt whoever's
 closest and detour for item boxes. Each has a fixed name, color, and skill level
 (see `BOT_PROFILES` in `autoload/game_settings.gd`).
 
+## The circuit
+
+About 890 m a lap, in three parts that look and drive differently:
+
+| | |
+|---|---|
+| **Meadow** | The start/finish straight past the grandstands — 16 m wide, room for the whole grid. A fast banked left onto the east straight, which is painted down the middle: pick the boost-pad lane or the item-box lane. Then a pinched chicane. |
+| **Canyon** | The climb to Ramp 1 and the drop off its lip, a stone arch gallery over the landing straight, a second lane split, and then the viaduct — the narrowest road on the lap, railed both sides, spanning a gorge with water 30 m below. |
+| **Forest** | Ramp 2 climbing back north, a tight banked corner through the trees, and the run down to the line. |
+
+Corners bank into themselves and the road width changes as you go round, both
+generated from the layout rather than authored — see `road_ribbon.gd`. Editing
+`WAYPOINTS` in `track_builder.gd` moves everything else with it: the pads,
+hazards, checkpoints, structures, terrain and scenery are all placed relative to
+the waypoints, not at fixed distances.
+
+## The arena
+
+225 m of open rink, with somewhere to go:
+
+- **The butte** — a plateau in the middle with sides too steep to climb, reachable
+  only up four long ramps. There's a monument and a ring of item boxes on top, and
+  a long way down if someone shunts you off.
+- **The banking** — the ground sweeps up into the boundary wall, so the rim is a
+  velodrome rather than something you scrape along.
+- **The crater**, a bowl in the north-west with item boxes at the bottom; **the
+  grove**, a stand of pillars to lose someone in; four **kickers** shaped into the
+  ground with jump pads on their crests; a **boost ring** set tangentially; crate
+  pyramids and oil slicks.
+
 ## Layout
 
 ```
 autoload/    GameSettings (cross-scene state), AudioManager (SFX/ambience)
 scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads
 scripts/     one per scene, plus ai_driver.gd, item_kind.gd, crash_blame.gd,
-             and the track/arena builders
+             and the track/arena builders:
+               road_ribbon.gd   the road surface mesh — banking and varying width
+               track_ground.gd  the height field the terrain and the props share
+               track_props.gd   viaduct, arch gallery, grandstands, barriers
 tests/       headless GDScript checks for the crash-attribution rules
 shaders/     toon.gdshader — the cel-shaded look everything shares
 ```
 
 Tracks, terrain, scenery, the arena rink, and the grandstand crowd are all
 generated in code at runtime rather than hand-placed — see `track_builder.gd` and
-`arena_builder.gd`.
+`arena_builder.gd`. The racetrack's ground is defined once in `track_ground.gd`
+and used by both the props (so a tree stands on the ground) and the Terrain3D
+heightmap (so the ground is where the tree thinks it is).
 
 Sound effects come from the bundled *Sound FX Starter Pack Vol. 1*;
 `autoload/audio_manager.gd` maps short gameplay names onto the clip paths.
