@@ -58,6 +58,13 @@ godot --headless --path . --script tests/test_arena_map.gd
 godot --headless --path . --script tests/test_track_driving.gd
 ```
 
+Which power-ups each mode can hand out is checked too — a race draws from all
+four, the arena only from the weapons and the shield:
+
+```
+godot --headless --path . --script tests/test_item_pool.gd
+```
+
 ## Controls
 
 | | Steer | Go | Brake / reverse | Use item |
@@ -73,12 +80,15 @@ Drive through a floating `?` box to pick one up (one at a time). Whoever's furth
 back gets better odds on the aggressive items, so a kid who's behind can still
 catch up. Items can be switched off entirely on the main menu.
 
-| | Item | What it does |
-|---|---|---|
-| 🔥 | Turbo | A big speed burst — stronger and longer than a track boost pad |
-| 🚀 | Rocket | Fires forward and gently homes in on whoever's ahead; dodgeable |
-| 🛢 | Oil Slick | Drops behind you; whoever hits it loses grip. Fades after ~14s |
-| 🛡 | Shield | Absorbs the next hit, then pops |
+| | Item | What it does | Arena |
+|---|---|---|---|
+| 🔥 | Turbo | A big speed burst — stronger and longer than a track boost pad | — |
+| 🚀 | Rocket | Fires forward and gently homes in on whoever's ahead; dodgeable | yes |
+| 🛢 | Oil Slick | Drops behind you; whoever hits it loses grip. Fades after ~14s | yes |
+| 🛡 | Shield | Absorbs the next hit, then pops | yes |
+
+The bumper arena hands out only the weapons and the shield. There's no finish
+line to race to, so a turbo there is a wasted pick-up.
 
 ## Bots
 
