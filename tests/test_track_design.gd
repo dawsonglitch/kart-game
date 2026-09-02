@@ -379,6 +379,7 @@ func _test_race_world() -> void:
 	_check("an item box dropped near the road ends up on it", on_road["ItemBox"])
 	_check("a tree is built", tree_found)
 	_check("a bridge is built", bridge_found)
+	_check_bridge_is_drivable(track, ground)
 
 	# The template's lake is carved into the ground, not painted on top of it...
 	var lake_floor: float = ground.height_at(0.0, 0.0)
@@ -405,6 +406,56 @@ func _test_race_world() -> void:
 	_check("water has a surface", water_planes >= 1)
 
 	track.queue_free()
+
+
+## A kart is a CharacterBody3D and cannot climb a vertical step of any height, so
+## a bridge deck that stands proud of the ground at its ends is scenery, not a
+## bridge. Each end gets a ramp; this checks both of them actually reach the
+## ground rather than stopping short above it (which is what happens if the ramp
+## slab is sized by its horizontal run instead of its own length) or pitching the
+## wrong way entirely.
+func _check_bridge_is_drivable(track: Node3D, ground: TrackGround) -> void:
+	var bridge: StaticBody3D = null
+	for child in track.get_children():
+		if child is StaticBody3D and String(child.name).begins_with("Bridge"):
+			bridge = child
+	if bridge == null:
+		_check("bridge found to check", false)
+		return
+
+	var ramps: Array = []
+	var has_deck := false
+	for child in bridge.get_children():
+		if not (child is CollisionShape3D):
+			continue
+		if String(child.name).begins_with("RampShape"):
+			ramps.append(child)
+		elif child.name == "DeckShape":
+			has_deck = true
+	_check("bridge has a solid deck", has_deck)
+
+	var landings := 0
+	var worst := 0.0
+	for shape in ramps:
+		var box: BoxShape3D = shape.shape
+		# The lower of the ramp's two top edges is the end that meets the ground.
+		var lowest := INF
+		var landing := Vector3.ZERO
+		for end: float in [-1.0, 1.0]:
+			var corner: Vector3 = shape.global_transform * Vector3(
+				0.0, box.size.y * 0.5, end * box.size.z * 0.5
+			)
+			if corner.y < lowest:
+				lowest = corner.y
+				landing = corner
+		landings += 1
+		worst = maxf(worst, landing.y - ground.height_at(landing.x, landing.z))
+	_check("both ramps are there", landings == 2)
+	_check(
+		"the ramps reach the ground",
+		landings == 2 and worst <= 0.05,
+		"worst end stands %.2f m proud" % worst
+	)
 
 
 func _test_arena_world() -> void:

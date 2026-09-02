@@ -16,9 +16,14 @@ extends RefCounted
 const BRIDGE_HALF_WIDTH := 5.0
 const BRIDGE_THICKNESS := 0.6
 const BRIDGE_RAIL_HEIGHT := 1.1
-## Bridges sit this far above the highest ground under either end, so a deck
-## spanning a pool clears its rim instead of being buried in it.
-const BRIDGE_CLEARANCE := 1.2
+## Ramps down off each end. A kart is a CharacterBody3D, which cannot climb a
+## vertical step of ANY height — the same fact that governs how close to the road
+## TrackGround is allowed to put the shoulder — so a deck slab on its own is a
+## bridge you can look at and not drive onto. Each end gets a wedge that runs
+## from the deck surface down into the ground.
+const BRIDGE_RAMP_SINK := 0.35        # how far the ramp's far edge buries itself
+const BRIDGE_RAMP_MIN_RUN := 3.0
+const BRIDGE_RAMP_RUN_PER_DROP := 4.0 # 4 m of run per metre of drop, i.e. ~14 degrees
 
 const TREE_TRUNK_HEIGHT := 2.4
 const TREE_FOLIAGE_HEIGHT := 3.0
@@ -248,18 +253,22 @@ static func _build_crate(parent: Node3D, base: Vector3, yaw: float, size: float)
 	body.add_child(shape)
 
 
-## A flat deck of `length` metres running along `yaw`, railed both sides, seated
-## above whatever it spans. Its height comes from the ground at its two ends
-## rather than its middle — the middle is usually the hole it's there to cross.
+## A flat deck of `length` metres running along `yaw`, railed both sides, with a
+## ramp down off each end.
+##
+## The deck's surface sits level with the HIGHER of the two ends' ground, so it
+## spans whatever is between them rather than following it. Which is also why the
+## ramps are needed: the lower end can be a couple of metres down.
 static func _build_bridge(
 	parent: Node3D, pos: Vector3, yaw: float, length: float, ground: TrackGround, rail_color: Color
 ) -> void:
 	var forward := Vector3(cos(yaw), 0.0, sin(yaw))
 	var end_a: Vector3 = pos - forward * length * 0.5
 	var end_b: Vector3 = pos + forward * length * 0.5
-	var deck_y: float = maxf(
+	var end_heights := [
 		ground.height_at(end_a.x, end_a.z), ground.height_at(end_b.x, end_b.z)
-	) + BRIDGE_CLEARANCE
+	]
+	var deck_top: float = maxf(end_heights[0], end_heights[1])
 
 	var body := StaticBody3D.new()
 	body.name = "Bridge"
@@ -268,22 +277,64 @@ static func _build_bridge(
 	# own long axis is its local Z, and getting the sign of that conversion wrong
 	# lays the bridge across what it was meant to span.
 	var basis := Basis(Vector3(forward.z, 0.0, -forward.x), Vector3.UP, forward)
-	body.global_transform = Transform3D(basis, Vector3(pos.x, deck_y, pos.z))
+	body.global_transform = Transform3D(
+		basis, Vector3(pos.x, deck_top - BRIDGE_THICKNESS * 0.5, pos.z)
+	)
 
+	var timber := ToonMaterial.create(Color(0.62, 0.5, 0.38))
 	var deck_mesh := BoxMesh.new()
 	deck_mesh.size = Vector3(BRIDGE_HALF_WIDTH * 2.0, BRIDGE_THICKNESS, length)
 	var deck := MeshInstance3D.new()
 	deck.mesh = deck_mesh
-	deck.material_override = ToonMaterial.create(Color(0.62, 0.5, 0.38))
+	deck.material_override = timber
 	body.add_child(deck)
 
 	var deck_shape := CollisionShape3D.new()
+	deck_shape.name = "DeckShape"
 	var deck_box := BoxShape3D.new()
 	deck_box.size = deck_mesh.size
 	deck_shape.shape = deck_box
 	body.add_child(deck_shape)
 
-	# Railings, so driving onto a bridge isn't a coin flip.
+	# One ramp per end, each pitched to land its outer edge just under the ground
+	# it meets. Local +Z is along the bridge, so the near end of a ramp sits at
+	# the deck's own surface height and the far end swings down from there.
+	for side: int in [0, 1]:
+		var sign_z: float = -1.0 if side == 0 else 1.0
+		var drop: float = deck_top - (float(end_heights[side]) - BRIDGE_RAMP_SINK)
+		var run: float = maxf(BRIDGE_RAMP_MIN_RUN, drop * BRIDGE_RAMP_RUN_PER_DROP)
+		var pitch: float = atan(drop / run)
+		# `run` and `drop` are the horizontal and vertical legs; the slab lies
+		# along the hypotenuse. Sizing it by `run` instead would leave its far
+		# edge short of the ground by the difference — a small step, which is the
+		# one thing a kart cannot drive up.
+		var slab: float = sqrt(run * run + drop * drop)
+		var ramp_mesh := BoxMesh.new()
+		ramp_mesh.size = Vector3(BRIDGE_HALF_WIDTH * 2.0, BRIDGE_THICKNESS, slab)
+		var ramp_transform := Transform3D(
+			Basis(Vector3.RIGHT, sign_z * pitch),
+			Vector3(0.0, -drop * 0.5, sign_z * (length * 0.5 + run * 0.5))
+		)
+
+		var ramp := MeshInstance3D.new()
+		ramp.mesh = ramp_mesh
+		ramp.material_override = timber
+		ramp.transform = ramp_transform
+		body.add_child(ramp)
+
+		var ramp_shape := CollisionShape3D.new()
+		# Named so the checks in tests/test_track_design.gd can tell a ramp from
+		# the deck and the railings, all of which are collision shapes on the
+		# same body.
+		ramp_shape.name = "RampShape%d" % side
+		var ramp_box := BoxShape3D.new()
+		ramp_box.size = ramp_mesh.size
+		ramp_shape.shape = ramp_box
+		ramp_shape.transform = ramp_transform
+		body.add_child(ramp_shape)
+
+	# Railings, so driving onto a bridge isn't a coin flip. On the deck only —
+	# railing the ramps would fence off the way on.
 	var rail_mesh := BoxMesh.new()
 	rail_mesh.size = Vector3(0.35, BRIDGE_RAIL_HEIGHT, length)
 	var rail_material := ToonMaterial.create(rail_color)
@@ -297,6 +348,7 @@ static func _build_bridge(
 		body.add_child(rail)
 
 		var rail_shape := CollisionShape3D.new()
+		rail_shape.name = "RailShape%d" % (0 if side < 0.0 else 1)
 		var rail_box := BoxShape3D.new()
 		rail_box.size = rail_mesh.size
 		rail_shape.shape = rail_box
