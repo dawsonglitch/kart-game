@@ -173,8 +173,12 @@ static func from_template(template_id: String) -> TrackDesign:
 				var wave: float = sin(TAU * float(i) / float(design.nodes.size()) * 2.0)
 				design.nodes[i]["pos"].y = 5.0 + wave * 5.0
 			design.features.append(design._feature("water", Vector3(0, 0.0, 0), 0.0, 60.0))
-			design.features.append(design._feature("jump", Vector3(140.0, 0, 0), 0.0, 1.0))
-			design.features.append(design._feature("boost", Vector3(-140.0, 0, 0), 0.0, 1.0))
+			# A quarter and three quarters of the way round. Pads snap to the
+			# nearest point of road, and the ring's first node is the start/finish
+			# line — putting one on the +X axis would drop a jump pad under the
+			# grid, launching the whole field the instant the lights go out.
+			design.features.append(design._feature("jump", Vector3(0, 0, 110.0), 0.0, 1.0))
+			design.features.append(design._feature("boost", Vector3(0, 0, -110.0), 0.0, 1.0))
 		"twister":
 			design.design_name = "My Twister"
 			design._ring(16, 110.0, 110.0, 5.0)
@@ -196,9 +200,13 @@ static func from_template(template_id: String) -> TrackDesign:
 			design.kind = Kind.ARENA
 			design.design_name = "My Junkyard"
 			design.arena_radius = 160.0
+			# Two rings of junk. The outer one deliberately clears the ring the
+			# karts spawn on (custom_arena_builder.gd's START_RADIUS_FRACTION of
+			# the rink) — at 100 m a crate landed five metres in front of one of
+			# the starting positions on any even-numbered field.
 			for i in range(10):
 				var angle: float = TAU * float(i) / 10.0
-				var radius: float = 55.0 if i % 2 == 0 else 100.0
+				var radius: float = 55.0 if i % 2 == 0 else 128.0
 				var pos := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
 				var kinds := ["crate", "rock", "jump", "boost", "box"]
 				design.features.append(design._feature(kinds[i % kinds.size()], pos, angle, 1.4))

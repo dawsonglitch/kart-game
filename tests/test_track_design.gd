@@ -94,6 +94,7 @@ func _test_templates() -> void:
 		else:
 			race_templates += 1
 	_check("there is a template for each mode", race_templates > 0 and arena_templates > 0)
+	_check_templates_keep_the_grid_clear()
 
 	# A template that sits outside the design limits comes back reshaped from its
 	# first save, which is a baffling thing for a starting point to do.
@@ -108,6 +109,53 @@ func _test_templates() -> void:
 					drift, (design.nodes[i]["pos"] as Vector3).distance_to(reloaded.nodes[i]["pos"])
 				)
 		_check("%s is unchanged by a save" % id, reloaded != null and drift < 0.001, "drift %.3f" % drift)
+
+
+## Nothing a template ships with may sit where the field starts. Both ways of
+## getting this wrong have happened: the hill loop put a jump pad on the +X axis,
+## which is the ring's first node and therefore the start/finish line, so the
+## whole grid launched itself the instant the lights went out; and the junkyard's
+## outer ring of crates crossed the circle the arena spawns karts on, leaving one
+## of them staring at a crate five metres away on any even-numbered field.
+##
+## Neither is a crash, which is exactly why they need a check — a starting point
+## that starts you in trouble just reads as the editor being broken.
+const MIN_SPAWN_CLEARANCE := 12.0
+
+func _check_templates_keep_the_grid_clear() -> void:
+	for template in TrackDesign.TEMPLATES:
+		var id := String(template["id"])
+		var design := TrackDesign.from_template(id)
+		var closest := INF
+		if design.kind == TrackDesign.Kind.ARENA:
+			# Spawns are spread evenly round the rim; the field can be 1 to 4.
+			for field_size in range(1, 5):
+				for slot in range(field_size):
+					var angle: float = TAU * float(slot) / float(field_size)
+					var radius: float = (
+						design.arena_radius * CustomArenaBuilder.START_RADIUS_FRACTION
+					)
+					var spawn := Vector2(cos(angle) * radius, sin(angle) * radius)
+					for feature in design.features:
+						var pos: Vector3 = feature["pos"]
+						closest = minf(closest, spawn.distance_to(Vector2(pos.x, pos.z)))
+		else:
+			# A race grid forms on the start/finish line, which is node 0.
+			var start: Vector3 = design.nodes[0]["pos"]
+			for feature in design.features:
+				# Only the things that end up ON the road can be under a kart;
+				# scenery beside it is what scenery is for.
+				if not bool(TrackDesign.FEATURES[String(feature["type"])]["on_road"]):
+					continue
+				var pos: Vector3 = feature["pos"]
+				closest = minf(closest, Vector2(start.x, start.z).distance_to(Vector2(pos.x, pos.z)))
+		if closest == INF:
+			continue # nothing placed that could be in the way
+		_check(
+			"%s starts the field on clear ground" % id,
+			closest >= MIN_SPAWN_CLEARANCE,
+			"closest is %.1f m away" % closest
+		)
 
 
 func _test_round_trip() -> void:
