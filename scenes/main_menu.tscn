@@ -104,6 +104,28 @@ theme_override_font_sizes/font_size = 18
 toggle_mode = true
 text = "💥 Bumper Arena"
 
+[node name="TrackRow" type="HBoxContainer" parent="Center/VBox"]
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="TrackLabel" type="Label" parent="Center/VBox/TrackRow"]
+custom_minimum_size = Vector2(90, 44)
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0.1, 0.1, 0.1, 1)
+theme_override_constants/outline_size = 5
+vertical_alignment = 1
+text = "Track"
+
+[node name="TrackOption" type="OptionButton" parent="Center/VBox/TrackRow"]
+custom_minimum_size = Vector2(340, 44)
+theme_override_font_sizes/font_size = 18
+
+[node name="DesignButton" type="Button" parent="Center/VBox/TrackRow"]
+custom_minimum_size = Vector2(150, 44)
+theme_override_font_sizes/font_size = 18
+text = "🛠 Designer"
+
 [node name="BotRow" type="HBoxContainer" parent="Center/VBox"]
 alignment = 1
 theme_override_constants/separation = 8

@@ -13,6 +13,11 @@ A little kart driving game I made for my kids. Godot 4.7, split-screen, keyboard
   clock runs out wins. Turn the timer off on the main menu for the old
   open-ended rink that never ends.
 
+- **🛠 Track Designer** — make your own. Start from a template, drag the road
+  around, drop trees and jumps and ponds on it, recolour everything, drive it,
+  and save it. Saved tracks show up in the **Track** picker on the main menu
+  alongside the two built-in courses.
+
 Either mode can be 1 or 2 players, with 0–3 AI bots joining the field.
 
 ## Who caused that crash?
@@ -63,6 +68,67 @@ four, the arena only from the weapons and the shield:
 
 ```
 godot --headless --path . --script tests/test_item_pool.gd
+```
+
+## The track designer
+
+`🛠 Designer` on the main menu opens it, on whatever the Track picker has
+selected — a saved track to keep working on it, or a built-in course to start
+something new of that kind.
+
+You get five starting points: three circuits (**Oval**, **Hill Loop**,
+**Twister**) and two rinks (**Open Rink**, **Junkyard**). All five are already
+drivable, so a kid who changes nothing still ends up with a working track.
+
+| | |
+|---|---|
+| **Shape the road** | Drag a red handle. Hold **Shift** while dragging to raise or lower it — that's how you get hills and dips. The **Width** slider widens or pinches the road at that point, and **Add point** puts a new handle in the middle of the next stretch so you can lengthen the lap and bend it somewhere new. |
+| **Drop things on it** | Pick something from **Things to add** and click the ground: trees, rocks, crates, jump pads, boost pads, item boxes, oil slicks, bridges and water. Blue handles move them; **Size** and **Turn** adjust the selected one. |
+| **Recolour it** | The **Colors** row does the road, the ground, the leaves, the rocks, the water and the sky. |
+| **Drive it** | **▶ Test Drive** runs the track you're looking at, unsaved changes and all, and the pause menu comes back to the editor rather than the main menu. |
+| **Keep it** | **💾 Save Track** writes it under whatever's in the name box. **📂 Open** lists everything you've saved, to reopen or delete. |
+| **Get around** | Drag empty space to spin the view, right-drag to pan, wheel to zoom. |
+
+Saved tracks are JSON files in Godot's per-user data directory
+(`user://tracks/`, which is
+`~/Library/Application Support/Godot/app_userdata/RacingGameWithKids/tracks` on
+this machine) — one file per track, named after the track, safe to copy or back
+up.
+
+A player-made course is built by the same code the shipped ones are: the same
+`road_ribbon.gd` for the banked, varying-width road, the same `track_ground.gd`
+height field under it, the same terrain, pads, boxes and hazards. What the
+editor previews is what you drive. The pieces:
+
+```
+track_design.gd          the design itself, as plain data — road nodes, features,
+                         colors, the templates, and the JSON it saves as
+track_library.gd         user://tracks — save, list, open, delete
+track_editor.gd          the editor: the 3D view, the handles, the panel
+custom_track_builder.gd  a design -> a race track (road, gates, finish line)
+custom_arena_builder.gd  a design -> a bumper rink (floor, wall, spawns)
+custom_features.gd       the trees/rocks/jumps/bridges/water, shared by both
+custom_terrain_builder.gd  stamps either one's ground into Terrain3D
+```
+
+Checked headlessly — the save format, the library, and the worlds both builders
+generate:
+
+```
+godot --headless --path . --script tests/test_track_design.gd
+```
+
+...and the editor's own wiring, driven through its real buttons:
+
+```
+godot --headless --path . --script tests/test_track_editor.gd
+```
+
+A generated track can also be handed to the AI field, which is the only way to
+find out whether a layout is actually drivable rather than merely well formed:
+
+```
+godot --headless --path . --script tests/test_track_driving.gd -- twister
 ```
 
 ## Controls
@@ -132,12 +198,15 @@ the waypoints, not at fixed distances.
 
 ```
 autoload/    GameSettings (cross-scene state), AudioManager (SFX/ambience)
-scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads
+scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads,
+             track_editor, and the custom_* variants player-made tracks run in
 scripts/     one per scene, plus ai_driver.gd, item_kind.gd, crash_blame.gd,
              and the track/arena builders:
                road_ribbon.gd   the road surface mesh — banking and varying width
                track_ground.gd  the height field the terrain and the props share
-               track_props.gd   viaduct, arch gallery, grandstands, barriers
+               track_props.gd   viaduct, arch gallery, grandstands, barriers,
+                                the finish line and the road's material
+             the track designer has its own set — see above
 tests/       headless GDScript checks for the crash-attribution rules
 shaders/     toon.gdshader — the cel-shaded look everything shares
 ```
