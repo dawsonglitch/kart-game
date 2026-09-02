@@ -43,6 +43,17 @@ func _panel(path: String) -> Node:
 	return editor.get_node("UI/Root/Panel/Scroll/VBox/%s" % path)
 
 
+## Presses a button that may first ask about unsaved work, answering "don't
+## save". Most of the checks below are not about the dialog, and every one of
+## them would otherwise have to know whether the previous check dirtied the
+## design.
+func _press_discarding(button: Button) -> void:
+	button.pressed.emit()
+	var confirm: PanelContainer = editor.get_node("UI/Root/ConfirmPanel")
+	if confirm.visible:
+		(editor.get_node("UI/Root/ConfirmPanel/VBox/Row/DiscardButton") as Button).pressed.emit()
+
+
 func _run() -> void:
 	# A clean library, since the editor's Open dialog reads the real one.
 	for entry in TrackLibrary.list_designs():
@@ -56,6 +67,9 @@ func _run() -> void:
 	_test_templates()
 	_test_placing_and_removing()
 	_test_colors()
+	_test_undo()
+	_test_unsaved_guard()
+	_test_jumps()
 	_test_saving_and_opening()
 
 	editor.queue_free()
@@ -92,7 +106,7 @@ func _test_templates() -> void:
 	for i in range(TrackDesign.TEMPLATES.size()):
 		var template: Dictionary = TrackDesign.TEMPLATES[i]
 		option.select(i)
-		_panel("TemplateRow/NewButton").pressed.emit()
+		_press_discarding(_panel("TemplateRow/NewButton"))
 		var id := String(template["id"])
 		_check("%s loads into the editor" % id, editor.design.kind == int(template["kind"]))
 		# The arena has no road nodes, so its handles are only its features; the
@@ -116,7 +130,7 @@ func _test_placing_and_removing() -> void:
 	print("\n--- adding and removing things ---")
 	var option: OptionButton = _panel("TemplateRow/TemplateOption")
 	option.select(0) # the oval
-	_panel("TemplateRow/NewButton").pressed.emit()
+	_press_discarding(_panel("TemplateRow/NewButton"))
 
 	var before: int = editor.design.features.size()
 	# Picking a palette button and dropping one is two separate acts in the UI;
@@ -127,7 +141,7 @@ func _test_placing_and_removing() -> void:
 
 	editor.design.add_feature("rock", Vector3(40.0, 0.0, 40.0))
 	editor.design.add_feature("water", Vector3(-60.0, 0.0, 0.0))
-	_panel("TemplateRow/NewButton").pressed.emit() # any rebuild path
+	_press_discarding(_panel("TemplateRow/NewButton")) # any rebuild path
 	_check("a new template clears the previous edits", editor.design.features.size() != before + 2)
 
 	# Road points: the panel's own buttons, on a selected node.
@@ -154,7 +168,7 @@ func _test_colors() -> void:
 	print("\n--- colors ---")
 	var option: OptionButton = _panel("TemplateRow/TemplateOption")
 	option.select(0)
-	_panel("TemplateRow/NewButton").pressed.emit()
+	_press_discarding(_panel("TemplateRow/NewButton"))
 
 	var picker: ColorPickerButton = _panel("ColorGrid").get_child(0).get_child(1)
 	var chosen := Color(0.11, 0.72, 0.33)
@@ -166,11 +180,136 @@ func _test_colors() -> void:
 	# Loading a different design has to push its colors back into the pickers, or
 	# the panel is showing one track's palette over another track's road.
 	option.select(1)
-	_panel("TemplateRow/NewButton").pressed.emit()
+	_press_discarding(_panel("TemplateRow/NewButton"))
 	_check(
 		"opening another track resets the pickers",
 		picker.color.is_equal_approx(TrackDesign.COLOR_DEFAULTS[key])
 	)
+
+
+## The single most important thing in a tool aimed at children: everything can be
+## taken back. A child explores by doing something drastic and seeing what
+## happens, which is only safe if it is reversible.
+func _test_undo() -> void:
+	print("\n--- undo ---")
+	_press_discarding(_panel("TemplateRow/NewButton"))
+	var undo: Button = _panel("UndoButton")
+	_check("nothing to undo on a fresh track", undo.disabled)
+
+	var nodes_before: int = editor.design.nodes.size()
+	editor._select(1, 0)
+	_panel("NodeRow/SplitButton").pressed.emit()
+	_check("undo lights up after an edit", not undo.disabled)
+	undo.pressed.emit()
+	_check("undo puts the point back", editor.design.nodes.size() == nodes_before)
+
+	# ...including the things that are not a single click: colors, deletions, and
+	# adding something.
+	var key: String = (_panel("ColorGrid").get_child(0).get_child(0) as Label).text.to_lower()
+	var original: Color = editor.design.color_of(key)
+	var picker: ColorPickerButton = _panel("ColorGrid").get_child(0).get_child(1)
+	picker.color_changed.emit(Color(0.9, 0.1, 0.4))
+	undo.pressed.emit()
+	_check("undo restores a color", editor.design.color_of(key).is_equal_approx(original))
+
+	var features_before: int = editor.design.features.size()
+	editor.design.add_feature("tree", Vector3(20, 0, 20))
+	editor._push_undo()
+	editor.design.features.remove_at(editor.design.features.size() - 1)
+	undo.pressed.emit()
+	_check("undo restores a deleted thing", editor.design.features.size() == features_before + 1)
+
+	# And it runs out rather than running backwards past the start.
+	for _i in range(60):
+		undo.pressed.emit()
+	_check("undo stops at the beginning", undo.disabled)
+	_check("the track survived being unwound", editor.design.nodes.size() >= TrackDesign.MIN_NODES)
+	_check("the road is still built", editor.get_node("Preview/Road").get_child_count() > 0)
+
+
+## The other half of not losing a child's work: the ways out all ask first.
+func _test_unsaved_guard() -> void:
+	print("\n--- unsaved work ---")
+	var confirm: PanelContainer = editor.get_node("UI/Root/ConfirmPanel")
+	_press_discarding(_panel("TemplateRow/NewButton"))
+	_check("a freshly loaded track is not 'unsaved'", not confirm.visible)
+
+	_panel("TemplateRow/NewButton").pressed.emit()
+	_check("...so New just works", not confirm.visible)
+
+	editor._select(1, 0)
+	_panel("NodeRow/SplitButton").pressed.emit()
+	_panel("TemplateRow/NewButton").pressed.emit()
+	_check("New asks once there are changes", confirm.visible)
+
+	(editor.get_node("UI/Root/ConfirmPanel/VBox/Row/CancelButton") as Button).pressed.emit()
+	_check("'go back' closes it", not confirm.visible)
+	_check("'go back' changes nothing", editor.design != null)
+
+	_panel("BottomRow/BackButton").pressed.emit()
+	_check("leaving for the menu asks too", confirm.visible)
+	(editor.get_node("UI/Root/ConfirmPanel/VBox/Row/CancelButton") as Button).pressed.emit()
+
+	_panel("BottomRow/OpenButton").pressed.emit()
+	var list: ItemList = editor.get_node("UI/Root/OpenPanel/VBox/List")
+	if list.item_count > 0 and not list.is_item_disabled(0):
+		list.select(0)
+		(editor.get_node("UI/Root/OpenPanel/VBox/Row/LoadButton") as Button).pressed.emit()
+		_check("opening another track asks too", confirm.visible)
+		(editor.get_node("UI/Root/ConfirmPanel/VBox/Row/CancelButton") as Button).pressed.emit()
+	editor.get_node("UI/Root/OpenPanel").hide()
+
+
+## A jump is three things at once and only works where there is room for it, so
+## the button both builds it and checks what it built.
+func _test_jumps() -> void:
+	print("\n--- jumps ---")
+	var option: OptionButton = _panel("TemplateRow/TemplateOption")
+	option.select(0) # the oval, which has room everywhere
+	_press_discarding(_panel("TemplateRow/NewButton"))
+
+	var jump: Button = _panel("JumpButton")
+	editor._select(1, 1)
+	_check("the jump button is offered on a road point", jump.visible)
+	var nodes_before: int = editor.design.nodes.size()
+	var pads_before: int = _count_features("jump")
+	jump.pressed.emit()
+	_check("a jump adds its landing point", editor.design.nodes.size() == nodes_before + 1)
+	_check("a jump adds its pad", _count_features("jump") == pads_before + 1)
+	_check("the lip is marked as a ramp", editor.design.is_ramp(1))
+	_check("the road has no folds after it", editor._count_folded_faces(editor._ribbon) == 0)
+
+	# The whole thing comes back in one press, not three.
+	_panel("UndoButton").pressed.emit()
+	_check("undo takes the whole jump back", editor.design.nodes.size() == nodes_before)
+	_check("...including its pad", _count_features("jump") == pads_before)
+
+	# On the twister's outer points there is no room, and the editor has to
+	# refuse rather than leave the road folded over itself.
+	option.select(2) # twister
+	_press_discarding(_panel("TemplateRow/NewButton"))
+	var refused := 0
+	var built := 0
+	for i in range(editor.design.nodes.size()):
+		var before: int = editor.design.nodes.size()
+		editor._select(1, i)
+		jump.pressed.emit()
+		if editor.design.nodes.size() == before:
+			refused += 1
+		else:
+			built += 1
+			_panel("UndoButton").pressed.emit()
+	_check("some points take a jump", built > 0, "%d of %d" % [built, built + refused])
+	_check("the tight ones are refused", refused > 0, "%d refused" % refused)
+	_check("the road is never left folded", editor._count_folded_faces(editor._ribbon) == 0)
+
+
+func _count_features(type: String) -> int:
+	var found := 0
+	for feature in editor.design.features:
+		if String(feature["type"]) == type:
+			found += 1
+	return found
 
 
 func _test_saving_and_opening() -> void:
@@ -197,7 +336,7 @@ func _test_saving_and_opening() -> void:
 	_panel("BottomRow/OpenButton").pressed.emit()
 	_check("Open lists the saved track", list.item_count == 1)
 	list.select(0)
-	editor.get_node("UI/Root/OpenPanel/VBox/Row/LoadButton").pressed.emit()
+	_press_discarding(editor.get_node("UI/Root/OpenPanel/VBox/Row/LoadButton"))
 	_check("opening it loads it", editor.design.design_name != "")
 	_check("and the id comes with it", editor.saved_id != "")
 

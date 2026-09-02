@@ -100,6 +100,31 @@ const COLOR_DEFAULTS := {
 ## off like one of its corners rather than like a different kind of road.
 const TANGENT_SCALE := 0.25
 
+## ...and what a node marked as a ramp gets instead. A short tangent makes the
+## curve keep a corner there rather than easing through it, which is what turns a
+## raised node from a hill into a lip you actually leave the ground off — exactly
+## how the built-in circuit's two ramps are made (track_builder.gd's
+## SHARP_TANGENT_INDICES). The node *after* a lip gets something in between, so
+## the landing runs out straight instead of curving back up into the jump.
+##
+## Both are gentler than the built-in track's 0.02/0.05: those are hand-placed on
+## a layout that was checked afterwards, and these are applied wherever a child
+## puts them. Measured on the templates, 0.02 could fold the road back through
+## itself on a tight node; 0.06 reads as a clear edge and does not.
+const RAMP_TANGENT_SCALE := 0.06
+const RAMP_LANDING_TANGENT_SCALE := 0.12
+
+## No tangent may reach more than this fraction of the way to its NEARER
+## neighbour. Without the cap, the tangent at a point is sized by the distance
+## between the two points either side of it, so a point with one close neighbour
+## and one distant one gets a tangent far longer than the short side can absorb,
+## and the curve loops out past itself and back. On a hand-authored layout that
+## never comes up; on a track someone is dragging around it comes up constantly,
+## and it comes out as a patch of road wound inside out — invisible, and not
+## solid, so a kart falls through it. Measured on the Twister template, adding a
+## single point produced four such triangles; capped, none.
+const TANGENT_MAX_NEIGHBOUR_FRACTION := 0.5
+
 const MIN_NODES := 4
 const MAX_NODES := 40
 const MIN_HALF_WIDTH := 3.5
@@ -125,9 +150,11 @@ const ARENA_GROUND_NOISE := 0.7
 var kind: int = Kind.RACE
 var design_name: String = "My Track"
 
-## RACE only — the lap, in order, as [{"pos": Vector3, "half_width": float}, ...].
+## RACE only — the lap, in order, as
+## [{"pos": Vector3, "half_width": float, "ramp": bool}, ...].
 ## The loop closes back to node 0 automatically; there is no repeated end node.
-## `pos.y` is the road's height, which is what makes hills and dips.
+## `pos.y` is the road's height, which is what makes hills and dips, and `ramp`
+## turns the smooth curve through a raised node into a launch lip.
 var nodes: Array = []
 
 ## ARENA only — how big the rink is, wall to wall.
@@ -181,10 +208,17 @@ static func from_template(template_id: String) -> TrackDesign:
 			design.features.append(design._feature("boost", Vector3(0, 0, -110.0), 0.0, 1.0))
 		"twister":
 			design.design_name = "My Twister"
-			design._ring(16, 110.0, 110.0, 5.0)
+			design._ring(12, 110.0, 110.0, 5.5)
 			# Push alternate nodes in and out of the ring to make a wiggle.
+			#
+			# These used to be 16 nodes at 0.72/1.18, which is a star with points
+			# deep enough that the road's inner edge nearly laps itself at the
+			# outer ones — measured, the shape was fine as it shipped but adding
+			# a single point anywhere tipped it over into six patches of road
+			# wound inside out, which are invisible and not solid. A template is
+			# a starting point, so it needs room to be edited, not just to exist.
 			for i in range(design.nodes.size()):
-				var pull: float = 0.72 if i % 2 == 0 else 1.18
+				var pull: float = 0.88 if i % 2 == 0 else 1.1
 				var p: Vector3 = design.nodes[i]["pos"]
 				design.nodes[i]["pos"] = Vector3(p.x * pull, p.y, p.z * pull)
 			for i in range(6):
@@ -220,6 +254,7 @@ static func from_template(template_id: String) -> TrackDesign:
 	for node in design.nodes:
 		node["pos"] = clamp_position(node["pos"])
 		node["half_width"] = clampf(float(node["half_width"]), MIN_HALF_WIDTH, MAX_HALF_WIDTH)
+		node["ramp"] = bool(node.get("ramp", false))
 	for feature in design.features:
 		feature["pos"] = clamp_position(feature["pos"])
 	return design
@@ -234,6 +269,7 @@ func _ring(count: int, radius_x: float, radius_z: float, half_width: float) -> v
 		nodes.append({
 			"pos": Vector3(cos(angle) * radius_x, 0.0, sin(angle) * radius_z),
 			"half_width": half_width,
+			"ramp": false,
 		})
 
 
@@ -257,16 +293,117 @@ func add_feature(type: String, pos: Vector3, yaw: float = 0.0, size: float = -1.
 ## Inserts a road node midway between `index` and the one after it, which is how
 ## the editor lengthens a lap: you get a new handle exactly where the road
 ## already runs, and dragging it is what changes the shape.
+##
+## "Where the road already runs" is the important part, and it is why this samples
+## the curve instead of taking the midpoint of the straight line between the two
+## nodes. The road bulges outside that chord on a corner, so a chord midpoint
+## pulls it inwards — and on a tight enough corner it pulls it in far enough that
+## the road's inner edge laps itself and the surface comes out wound inside out:
+## invisible, and not solid, so a kart drops through it. Measured on the Twister
+## template, adding one point that way produced four such patches. Adding a point
+## on the curve changes the shape not at all, which is also what a person means
+## by "add a point".
 func split_node(index: int) -> int:
 	if kind != Kind.RACE or nodes.size() >= MAX_NODES or nodes.is_empty():
 		return -1
-	var a: Dictionary = nodes[index % nodes.size()]
-	var b: Dictionary = nodes[(index + 1) % nodes.size()]
-	nodes.insert((index % nodes.size()) + 1, {
-		"pos": (a["pos"] as Vector3 + b["pos"] as Vector3) * 0.5,
+	var at: int = index % nodes.size()
+	var a: Dictionary = nodes[at]
+	var b: Dictionary = nodes[(at + 1) % nodes.size()]
+	var curve := build_curve()
+	nodes.insert(at + 1, {
+		"pos": point_on_road(curve, at, span_on_road(curve, at) * 0.5),
 		"half_width": (float(a["half_width"]) + float(b["half_width"])) * 0.5,
+		# A new point in the middle of a stretch is a plain point. Inheriting the
+		# ramp flag would silently put a second lip halfway down a jump.
+		"ramp": false,
 	})
-	return (index % nodes.size()) + 1
+	return at + 1
+
+
+## Distance along `curve` from the road point at `index` to the next one.
+## `build_curve` repeats node 0 at the end to close the loop, so the last node's
+## span runs to the curve's own end rather than wrapping to zero.
+func span_on_road(curve: Curve3D, index: int) -> float:
+	var at: int = index % nodes.size()
+	var from: float = _offset_on_road(curve, at)
+	var to: float = (
+		curve.get_baked_length() if at == nodes.size() - 1 else _offset_on_road(curve, at + 1)
+	)
+	return maxf(to - from, 0.0)
+
+
+## A point `distance` metres along the road from the point at `index`.
+func point_on_road(curve: Curve3D, index: int, distance: float) -> Vector3:
+	return curve.sample_baked(_offset_on_road(curve, index % nodes.size()) + distance)
+
+
+## Node 0 sits at both ends of the closed curve and get_closest_offset is free to
+## report either; everything here measures forward from the start line.
+func _offset_on_road(curve: Curve3D, index: int) -> float:
+	return 0.0 if index == 0 else curve.get_closest_offset(nodes[index]["pos"])
+
+
+## Turns the road point at `index` into a proper jump, in one go, because the
+## three things a jump needs are not obvious and are useless apart:
+##
+##   1. the lip is marked as a ramp, so the curve keeps a corner there instead of
+##      easing over it,
+##   2. the lip is raised, and a LANDING POINT is inserted a short way past it and
+##      well below, so the road falls away steeply enough to leave the ground —
+##      a lip alone does nothing when the next point is ninety metres off, which
+##      is what an evenly spaced template gives you,
+##   3. a jump pad goes on the lip.
+##
+## The built-in circuit's ramps are the same shape: a gentle climb, a marked lip
+## with a pad on it, and about twenty degrees of drop over the next thirty metres.
+##
+## Returns false if there is no room for another point.
+const JUMP_LIP_RISE := 5.0
+## How far past the lip the landing sits. Short, because the drop's steepness is
+## what makes the jump, and capped to a fraction of the stretch so it can't land
+## past the following point on a small track.
+const JUMP_LANDING_DISTANCE := 30.0
+const JUMP_LANDING_MAX_FRACTION := 0.4
+## The drop is a RATIO of that reach rather than a fixed height, which is the
+## whole trick. A fixed eleven-metre drop is a ramp on the oval's ninety-metre
+## straights and a cliff on the twister's forty-five-metre ones — measured, it
+## folded the twister's road back through itself at every tangent setting tried.
+## Proportional, every track gets the same roughly twenty-degree face the
+## built-in circuit's ramps have.
+const JUMP_DROP_RATIO := 0.38
+## ...and below this much room there is no jump to be had, so the button says so
+## instead of building a mess.
+const JUMP_MIN_SEGMENT := 40.0
+
+func make_jump(index: int) -> bool:
+	if kind != Kind.RACE or nodes.size() >= MAX_NODES:
+		return false
+	if span_on_road(build_curve(), index) < JUMP_MIN_SEGMENT:
+		return false
+	var lip: Dictionary = nodes[index % nodes.size()]
+	var lip_pos: Vector3 = lip["pos"]
+	var lip_y: float = clampf(lip_pos.y + JUMP_LIP_RISE, MIN_HEIGHT, MAX_HEIGHT)
+	lip["pos"] = Vector3(lip_pos.x, lip_y, lip_pos.z)
+	lip["ramp"] = true
+
+	# On the curve, not on the chord — same reason split_node() samples the road
+	# rather than the straight line between two points.
+	var curve := build_curve()
+	var at: int = index % nodes.size()
+	var reach: float = minf(
+		JUMP_LANDING_DISTANCE, span_on_road(curve, at) * JUMP_LANDING_MAX_FRACTION
+	)
+	var landing: Vector3 = point_on_road(curve, at, reach)
+	nodes.insert(at + 1, {
+		"pos": clamp_position(
+			Vector3(landing.x, lip_y - reach * JUMP_DROP_RATIO, landing.z)
+		),
+		"half_width": float(lip["half_width"]),
+		"ramp": false,
+	})
+
+	add_feature("jump", lip["pos"])
+	return true
 
 
 func remove_node(index: int) -> bool:
@@ -325,12 +462,30 @@ func build_curve() -> Curve3D:
 		return curve
 	for i in range(count + 1):
 		var index: int = i % count
-		var prev: Vector3 = nodes[(index - 1 + count) % count]["pos"]
+		var previous: Dictionary = nodes[(index - 1 + count) % count]
 		var point: Vector3 = nodes[index]["pos"]
 		var next: Vector3 = nodes[(index + 1) % count]["pos"]
-		var tangent: Vector3 = (next - prev) * TANGENT_SCALE
+		var scale: float = TANGENT_SCALE
+		if is_ramp(index):
+			scale = RAMP_TANGENT_SCALE
+		elif bool(previous.get("ramp", false)):
+			scale = RAMP_LANDING_TANGENT_SCALE
+		var tangent: Vector3 = (next - previous["pos"] as Vector3) * scale
+		var limit: float = TANGENT_MAX_NEIGHBOUR_FRACTION * minf(
+			point.distance_to(previous["pos"]), point.distance_to(next)
+		)
+		if tangent.length() > limit:
+			tangent = tangent.normalized() * limit
 		curve.add_point(point, -tangent, tangent)
 	return curve
+
+
+func is_ramp(index: int) -> bool:
+	return not nodes.is_empty() and bool(nodes[index % nodes.size()].get("ramp", false))
+
+
+func set_node_ramp(index: int, is_on: bool) -> void:
+	nodes[index]["ramp"] = is_on
 
 
 ## The [[offset, half_width], ...] profile RoadRibbon.build() reads, measured
@@ -363,6 +518,7 @@ func to_dict() -> Dictionary:
 		node_list.append({
 			"pos": _v3_to_array(node["pos"]),
 			"half_width": float(node["half_width"]),
+			"ramp": bool(node.get("ramp", false)),
 		})
 	var feature_list: Array = []
 	for feature in features:
@@ -407,6 +563,9 @@ static func from_dict(data: Dictionary) -> TrackDesign:
 			"half_width": clampf(
 				float(entry.get("half_width", 7.0)), MIN_HALF_WIDTH, MAX_HALF_WIDTH
 			),
+			# Absent in files written before ramps existed, which is a plain
+			# point — so this reads an older save without a format bump.
+			"ramp": bool(entry.get("ramp", false)),
 		})
 	if design.kind == Kind.RACE and design.nodes.size() < MIN_NODES:
 		return null

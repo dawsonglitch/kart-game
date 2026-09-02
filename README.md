@@ -82,12 +82,14 @@ drivable, so a kid who changes nothing still ends up with a working track.
 
 | | |
 |---|---|
-| **Shape the road** | Drag a red handle. Hold **Shift** while dragging to raise or lower it — that's how you get hills and dips. The **Width** slider widens or pinches the road at that point, and **Add point** puts a new handle in the middle of the next stretch so you can lengthen the lap and bend it somewhere new. |
+| **Shape the road** | Drag a red handle. Hold **Shift** while dragging to raise or lower it — that's how you get hills and dips. The **Width** slider widens or pinches the road at that point, and **Add point** puts a new handle further along so you can bend the lap somewhere new. |
+| **Build a jump** | **🛫 Make a jump here** on a selected point does the whole thing in one press: it sharpens the road into a lip instead of a smooth curve, drops a landing point in just past it so the road falls away at about twenty-five degrees, and puts a jump pad on the lip. Drag the lip up or down to make it bigger or smaller. A jump needs a reasonably straight stretch; on a corner that's too tight for one the editor says so and puts the road back. |
+| **Change your mind** | **↩ Undo** (or Ctrl+Z) takes back the last forty edits — every drag, every colour, every deletion, and a whole jump in one press. Starting a new track, opening another, or going back to the menu all ask before throwing away anything unsaved. |
 | **Drop things on it** | Pick something from **Things to add** and click the ground: trees, rocks, crates, jump pads, boost pads, item boxes, oil slicks, bridges and water. Blue handles move them; **Size** and **Turn** adjust the selected one. |
 | **Recolour it** | The **Colors** row does the road, the ground, the leaves, the rocks, the water and the sky. |
 | **Drive it** | **▶ Test Drive** runs the track you're looking at, unsaved changes and all, and the pause menu comes back to the editor rather than the main menu. |
 | **Keep it** | **💾 Save Track** writes it under whatever's in the name box. **📂 Open** lists everything you've saved, to reopen or delete. |
-| **Get around** | Drag empty space to spin the view, right-drag to pan, wheel to zoom. |
+| **Get around** | Drag empty space to spin the view, right-drag to pan, wheel to zoom. The line under the title tells you how long a lap is as you go. |
 
 Saved tracks are JSON files in Godot's per-user data directory
 (`user://tracks/`, which is
@@ -97,8 +99,18 @@ up.
 
 A player-made course is built by the same code the shipped ones are: the same
 `road_ribbon.gd` for the banked, varying-width road, the same `track_ground.gd`
-height field under it, the same terrain, pads, boxes and hazards. What the
-editor previews is what you drive. The pieces:
+height field under it, the same terrain, pads, boxes, hazards and the crowd
+around the start line. What the editor previews is what you drive — the one
+exception is the Terrain3D heightmap, which takes seconds to stamp and would
+make dragging a handle unusable, so the editor draws its own coarse mesh of the
+same height field instead.
+
+One thing the editor watches for and warns about: a corner tighter than the road
+is wide can't be built. The road's inner edge laps over the stretch behind it and
+that patch comes out wound inside out — invisible, and not solid, so a kart drops
+through it. If you draw one, an orange bar says so and tells you how to fix it.
+
+The pieces:
 
 ```
 track_design.gd          the design itself, as plain data — road nodes, features,

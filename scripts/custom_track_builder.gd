@@ -1,3 +1,4 @@
+class_name CustomTrackBuilder
 extends Node3D
 ## Builds a player-made *race* track from a TrackDesign, the way
 ## track_builder.gd builds the built-in circuit from its own constants.
@@ -32,6 +33,12 @@ const CHECKPOINT_MARGIN := 10.0
 ## ratio against it.
 const CHECKPOINT_SCENE_WIDTH := 13.0
 
+## How far either side of the start/finish line the grandstands run. The span
+## straddles offset zero, which build_grandstands() handles by being given an
+## unwrapped range that runs past the end of the lap.
+const GRANDSTAND_BEFORE_LINE := 40.0
+const GRANDSTAND_AFTER_LINE := 50.0
+
 @onready var path: Path3D = $Path3D
 @onready var road_mesh: MeshInstance3D = $RoadMesh
 @onready var road_body: StaticBody3D = $RoadBody
@@ -56,6 +63,13 @@ func _ready() -> void:
 	_place_checkpoints()
 	TrackProps.build_finish_line(self, _ribbon)
 	TrackProps.build_markers(self, _ribbon, _ground)
+	# Stands and a crowd around the start line. Decoration, and cheap, but it is
+	# most of what makes a lap feel like a racetrack rather than a road — a kid
+	# who has drawn their own circuit should get driven past a crowd on it.
+	TrackProps.build_grandstands(
+		self, _ribbon, _ground, _ribbon.length - GRANDSTAND_BEFORE_LINE,
+		_ribbon.length + GRANDSTAND_AFTER_LINE
+	)
 	TrackProps.build_water(self, canyons)
 	CustomFeatures.build(self, design, _ground, _ribbon)
 

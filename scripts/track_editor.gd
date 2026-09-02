@@ -62,6 +62,9 @@ const TOAST_SECONDS := 2.0
 @onready var new_button: Button = _panel_box.get_node("TemplateRow/NewButton")
 @onready var feature_grid: GridContainer = _panel_box.get_node("FeatureGrid")
 @onready var color_grid: GridContainer = _panel_box.get_node("ColorGrid")
+@onready var stats_label: Label = _panel_box.get_node("StatsLabel")
+@onready var undo_button: Button = _panel_box.get_node("UndoButton")
+@onready var jump_button: Button = _panel_box.get_node("JumpButton")
 @onready var selection_label: Label = _panel_box.get_node("SelectionLabel")
 @onready var size_row: HBoxContainer = _panel_box.get_node("SizeRow")
 @onready var size_label: Label = _panel_box.get_node("SizeRow/SizeLabel")
@@ -79,6 +82,13 @@ const TOAST_SECONDS := 2.0
 @onready var back_button: Button = _panel_box.get_node("BottomRow/BackButton")
 
 @onready var hint_label: Label = $UI/Root/Hint/HintLabel
+@onready var warn_panel: PanelContainer = $UI/Root/Warn
+@onready var warn_label: Label = $UI/Root/Warn/WarnLabel
+@onready var confirm_panel: PanelContainer = $UI/Root/ConfirmPanel
+@onready var confirm_message: Label = $UI/Root/ConfirmPanel/VBox/Message
+@onready var confirm_save_button: Button = $UI/Root/ConfirmPanel/VBox/Row/SaveButton
+@onready var confirm_discard_button: Button = $UI/Root/ConfirmPanel/VBox/Row/DiscardButton
+@onready var confirm_cancel_button: Button = $UI/Root/ConfirmPanel/VBox/Row/CancelButton
 @onready var toast_label: Label = $UI/Root/Toast
 @onready var open_panel: PanelContainer = $UI/Root/OpenPanel
 @onready var open_list: ItemList = $UI/Root/OpenPanel/VBox/List
@@ -129,6 +139,25 @@ var _toast_left: float = 0.0
 ## Built on first use and reused: red for a road point, blue for a feature,
 ## yellow for whichever is selected.
 var _handle_materials: Dictionary = {}
+
+## Snapshots for Undo, oldest first, each {"design": Dictionary, "saved_id": String}.
+## Whole-design snapshots rather than a list of reversible operations: a design is
+## a few kilobytes of dictionary, and the alternative is an undo implementation
+## with its own bugs sitting under a tool aimed at eight-year-olds.
+var _history: Array = []
+const MAX_UNDO := 40
+
+## True when there are edits that aren't in the library yet. Everything that
+## would throw them away asks first.
+var _unsaved: bool = false
+
+## What to do if the confirm dialog is answered "save" or "don't save".
+var _pending_action: Callable = Callable()
+
+## Patches of road wound inside out in the current build, if any — see
+## _count_folded_faces(). Non-zero means part of the road is invisible and not
+## solid, which the player needs telling about rather than discovering at speed.
+var _road_folds: int = 0
 
 
 func _ready() -> void:
@@ -218,11 +247,21 @@ func _wire_panel() -> void:
 	rotate_slider.value_changed.connect(_on_rotate_changed)
 	split_button.pressed.connect(_on_split_pressed)
 	delete_button.pressed.connect(_on_delete_pressed)
+	jump_button.pressed.connect(_on_jump_pressed)
+	undo_button.pressed.connect(_undo)
+
+	confirm_save_button.pressed.connect(_on_confirm_save)
+	confirm_discard_button.pressed.connect(_on_confirm_discard)
+	confirm_cancel_button.pressed.connect(_on_confirm_cancel)
 
 	test_button.pressed.connect(_on_test_drive_pressed)
 	save_button.pressed.connect(_on_save_pressed)
 	open_button.pressed.connect(_on_open_pressed)
 	back_button.pressed.connect(_on_back_pressed)
+
+	# Sliders push one undo step per drag, not one per pixel of travel.
+	for slider: HSlider in [size_slider, height_slider, rotate_slider]:
+		slider.drag_started.connect(_push_undo)
 
 	open_load_button.pressed.connect(_on_open_load_pressed)
 	open_delete_button.pressed.connect(_on_open_delete_pressed)
@@ -230,6 +269,75 @@ func _wire_panel() -> void:
 	open_list.item_activated.connect(func(_index: int) -> void: _on_open_load_pressed())
 
 	_feature_buttons[_add_type].button_pressed = true
+
+
+# ---------------------------------------------------------------------------
+# Undo, and not losing anyone's track
+# ---------------------------------------------------------------------------
+
+## Call BEFORE changing anything. Every edit is undoable, which for this audience
+## matters more than any single feature in the panel: the way a child explores a
+## tool is by doing something drastic and seeing what happens, and that is only
+## safe if it can be taken back.
+func _push_undo() -> void:
+	_history.append({"design": design.to_dict(), "saved_id": saved_id})
+	if _history.size() > MAX_UNDO:
+		_history.pop_front()
+	_unsaved = true
+	_refresh_history_button()
+
+
+func _undo() -> void:
+	if _history.is_empty():
+		return
+	var entry: Dictionary = _history.pop_back()
+	var restored := TrackDesign.from_dict(entry["design"])
+	if restored == null:
+		return
+	# Keeps the camera where it is: undoing an edit should put the track back,
+	# not move the view as well.
+	_adopt_design(restored, String(entry["saved_id"]), false)
+	AudioManager.play("ui_click", -10.0)
+	_refresh_history_button()
+
+
+func _refresh_history_button() -> void:
+	undo_button.disabled = _history.is_empty()
+
+
+## Runs `action` now if there is nothing to lose, or asks first if there is.
+func _guard_unsaved(action: Callable, what: String) -> void:
+	if not _unsaved:
+		action.call()
+		return
+	_pending_action = action
+	confirm_message.text = "\"%s\" has changes you haven't saved.\n%s" % [
+		design.design_name if design.design_name != "" else "Your track", what
+	]
+	confirm_panel.show()
+
+
+func _on_confirm_save() -> void:
+	confirm_panel.hide()
+	_on_save_pressed()
+	_run_pending()
+
+
+func _on_confirm_discard() -> void:
+	confirm_panel.hide()
+	_run_pending()
+
+
+func _on_confirm_cancel() -> void:
+	confirm_panel.hide()
+	_pending_action = Callable()
+
+
+func _run_pending() -> void:
+	var action := _pending_action
+	_pending_action = Callable()
+	if action.is_valid():
+		action.call()
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +425,18 @@ func _rebuild_props() -> void:
 	_build_ground_mesh(props)
 	TrackProps.build_water(props, canyons)
 	CustomFeatures.build(props, design, _ground, _ribbon, true)
+	if design.kind == TrackDesign.Kind.RACE and _ribbon != null:
+		# The crowd and the stands the real track builds around its start line,
+		# so the preview is not missing something the finished track has.
+		TrackProps.build_grandstands(
+			props, _ribbon, _ground,
+			_ribbon.length - CustomTrackBuilder.GRANDSTAND_BEFORE_LINE,
+			_ribbon.length + CustomTrackBuilder.GRANDSTAND_AFTER_LINE
+		)
+
+	_road_folds = _count_folded_faces(_ribbon)
+	_refresh_warning()
+	_refresh_stats()
 
 
 ## A plain grid mesh of the height field. Not Terrain3D — see the note at the top
@@ -375,6 +495,45 @@ func _build_ground_mesh(parent: Node3D) -> void:
 	instance.mesh = mesh
 	instance.material_override = ToonMaterial.create(design.color_of("ground") * 0.75)
 	parent.add_child(instance)
+
+
+## Triangles wound the wrong way round in the road surface. Godot's front face is
+## the one (c - a) x (b - a) points out of; a face that disagrees with its own
+## normal is inside out, which means that patch of road is invisible from above
+## AND, since Jolt back-face culls a one-sided trimesh, not solid — a kart drops
+## straight through it.
+##
+## It happens where a corner is tighter than the road is wide: the inner edge
+## laps over the stretch behind it. That is a shape a player can absolutely draw,
+## so the editor measures it on every full rebuild and says so, rather than
+## letting it be discovered at speed.
+func _count_folded_faces(ribbon: RoadRibbon) -> int:
+	if ribbon == null or ribbon.mesh == null or ribbon.mesh.get_surface_count() == 0:
+		return 0
+	var arrays: Array = ribbon.mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var folded := 0
+	for face in range(vertices.size() / 3):
+		var a: Vector3 = vertices[face * 3]
+		var b: Vector3 = vertices[face * 3 + 1]
+		var c: Vector3 = vertices[face * 3 + 2]
+		var geometric: Vector3 = (c - a).cross(b - a)
+		if geometric.length() > 0.0001 and geometric.normalized().dot(normals[face * 3]) < -0.2:
+			folded += 1
+	return folded
+
+
+func _refresh_warning() -> void:
+	if _road_folds > 0:
+		warn_label.text = (
+			"⚠ A corner is too tight for how wide the road is, so the road folds over "
+			+ "itself there. Karts can fall through it. Move that point further out, or "
+			+ "make the road narrower."
+		)
+		warn_panel.show()
+	else:
+		warn_panel.hide()
 
 
 func _height_at(x: float, z: float) -> float:
@@ -480,6 +639,14 @@ func _pick_handle(screen_pos: Vector2) -> int:
 # ---------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if confirm_panel.visible:
+		# The dialog is a question; nothing behind it should act until it is
+		# answered, including Escape, which is what put it up.
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_Z and (event.ctrl_pressed or event.meta_pressed):
+			_undo()
+			return
 	if open_panel.visible:
 		return
 	if event is InputEventMouseButton:
@@ -515,6 +682,7 @@ func _begin_left_press(event: InputEventMouseButton) -> void:
 		if _tool == Tool.ERASE:
 			_on_delete_pressed()
 			return
+		_push_undo()
 		_dragging = true
 		# Shift turns the drag vertical. Two separate gestures rather than a mode
 		# you can forget you're in: you can't accidentally launch a corner into
@@ -710,6 +878,7 @@ func _on_feature_type_picked(type: String) -> void:
 
 
 func _add_feature_at(point: Vector3) -> void:
+	_push_undo()
 	design.add_feature(_add_type, Vector3(point.x, 0.0, point.z))
 	AudioManager.play("ui_click", -10.0)
 	_rebuild_props()
@@ -721,6 +890,7 @@ func _add_feature_at(point: Vector3) -> void:
 
 
 func _on_color_changed(color: Color, key: String) -> void:
+	_push_undo()
 	design.colors[key] = color
 	_rebuild_all()
 
@@ -765,8 +935,10 @@ func _on_rotate_changed(value: float) -> void:
 func _on_split_pressed() -> void:
 	if _selection_kind != SelectionKind.NODE:
 		return
+	_push_undo()
 	var inserted := design.split_node(_selection_index)
 	if inserted < 0:
+		_history.pop_back()
 		_toast("That's as many points as a track can have")
 		return
 	_rebuild_all()
@@ -774,19 +946,63 @@ func _on_split_pressed() -> void:
 
 
 func _on_delete_pressed() -> void:
+	_push_undo()
 	match _selection_kind:
 		SelectionKind.NODE:
 			if not design.remove_node(_selection_index):
+				_history.pop_back()
 				_toast("A track needs at least %d points" % TrackDesign.MIN_NODES)
 				return
 		SelectionKind.FEATURE:
 			design.features.remove_at(_selection_index)
 		_:
+			_history.pop_back()
 			return
 	_selection_kind = SelectionKind.NONE
 	_selection_index = -1
 	_rebuild_all()
 	_refresh_panel()
+
+
+## One press builds the whole jump — see TrackDesign.make_jump() for why a lip
+## on its own does nothing — and then checks the result before keeping it.
+##
+## The check is the interesting half. A jump needs a short, steep drop, and asking
+## for one on a corner already near the limit of what a road that wide can turn
+## tips it into folding over itself. Rather than guess a threshold, this builds
+## the road and looks: if the jump wrecked it, the whole thing is taken back and
+## the player is told where a jump will work instead.
+func _on_jump_pressed() -> void:
+	if _selection_kind != SelectionKind.NODE:
+		return
+	_push_undo()
+	var folds_before := _road_folds
+	if not design.make_jump(_selection_index):
+		_history.pop_back()
+		_toast("There isn't a long enough stretch of road here for a jump")
+		return
+	_rebuild_road()
+	if _count_folded_faces(_ribbon) > folds_before:
+		_undo()
+		_toast("This corner is too tight for a jump — try a straighter part of the track")
+		return
+	_rebuild_props()
+	_rebuild_handles()
+	AudioManager.play("ui_click", -6.0)
+	_toast("Jump built! Drag its point up or down to change how big it is")
+
+
+## The numbers a person actually wants: how long a lap is, and how much is on it.
+func _refresh_stats() -> void:
+	if design.kind == TrackDesign.Kind.ARENA:
+		stats_label.text = "Rink %d m across · %d things" % [
+			int(round(design.arena_radius * 2.0)), design.features.size()
+		]
+		return
+	var lap: float = _ribbon.length if _ribbon != null else 0.0
+	stats_label.text = "Lap %d m · %d points · %d things" % [
+		int(round(lap)), design.nodes.size(), design.features.size()
+	]
 
 
 func _refresh_panel() -> void:
@@ -809,6 +1025,8 @@ func _refresh_panel() -> void:
 			rotate_row.hide()
 			node_row.show()
 			split_button.disabled = false
+			jump_button.show()
+			jump_button.disabled = design.nodes.size() >= TrackDesign.MAX_NODES
 		SelectionKind.FEATURE:
 			var feature: Dictionary = design.features[_selection_index]
 			var spec: Dictionary = TrackDesign.FEATURES[String(feature["type"])]
@@ -823,6 +1041,7 @@ func _refresh_panel() -> void:
 			rotate_slider.value = rad_to_deg(float(feature["yaw"]))
 			node_row.show()
 			split_button.disabled = true
+			jump_button.hide()
 		_:
 			selection_label.text = (
 				"Click a red handle to bend the track"
@@ -831,6 +1050,7 @@ func _refresh_panel() -> void:
 			height_row.hide()
 			rotate_row.hide()
 			node_row.hide()
+			jump_button.hide()
 			if is_race:
 				size_row.hide()
 			else:
@@ -869,19 +1089,35 @@ func _hint_text() -> String:
 # ---------------------------------------------------------------------------
 
 func _on_new_pressed() -> void:
+	_guard_unsaved(_start_new_template, "Starting a new track will replace it.")
+
+
+func _start_new_template() -> void:
 	var template: Dictionary = TrackDesign.TEMPLATES[maxi(template_option.selected, 0)]
 	_load_design(TrackDesign.from_template(String(template["id"])), "")
 	_toast("Started a new %s" % String(template["label"]).substr(2))
 
 
+## Opening a different track: forget the history (it belongs to the old one),
+## and put the whole thing on screen.
 func _load_design(new_design: TrackDesign, id: String) -> void:
+	_history.clear()
+	_unsaved = false
+	_refresh_history_button()
+	_adopt_design(new_design, id, true)
+
+
+## Swap in `new_design`. `reframe` moves the camera to fit it, which is right when
+## opening a track and wrong when undoing an edit to the one already on screen.
+func _adopt_design(new_design: TrackDesign, id: String, reframe: bool) -> void:
 	design = new_design
 	saved_id = id
 	_selection_kind = SelectionKind.NONE
 	_selection_index = -1
 	name_field.text = design.design_name
 	_sync_color_pickers()
-	_frame_design()
+	if reframe:
+		_frame_design()
 	_rebuild_all()
 	_refresh_panel()
 
@@ -905,6 +1141,7 @@ func _on_save_pressed() -> void:
 		_toast("Couldn't save — check there's room on disk")
 		return
 	saved_id = id
+	_unsaved = false
 	AudioManager.play("ui_click", -4.0)
 	_toast("Saved \"%s\"" % design.design_name)
 
@@ -930,6 +1167,10 @@ func _selected_library_id() -> String:
 
 
 func _on_open_load_pressed() -> void:
+	_guard_unsaved(_open_selected, "Opening another track will replace it.")
+
+
+func _open_selected() -> void:
 	var id := _selected_library_id()
 	if id == "":
 		return
@@ -972,7 +1213,15 @@ func _on_test_drive_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/loading_screen.tscn")
 
 
+## Ctrl+Z as well as the button — and Escape asks about unsaved work rather than
+## walking out with it.
+
+
 func _on_back_pressed() -> void:
+	_guard_unsaved(_leave_for_menu, "Going back to the menu will lose them.")
+
+
+func _leave_for_menu() -> void:
 	GameSettings.exit_scene_path = "res://scenes/main_menu.tscn"
 	GameSettings.exit_label = "Main Menu"
 	GameSettings.editor_design = null

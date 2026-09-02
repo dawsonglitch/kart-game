@@ -95,6 +95,7 @@ func _test_templates() -> void:
 			race_templates += 1
 	_check("there is a template for each mode", race_templates > 0 and arena_templates > 0)
 	_check_templates_keep_the_grid_clear()
+	_check_templates_survive_editing()
 
 	# A template that sits outside the design limits comes back reshaped from its
 	# first save, which is a baffling thing for a starting point to do.
@@ -158,11 +159,79 @@ func _check_templates_keep_the_grid_clear() -> void:
 		)
 
 
+## Road wound inside out. Godot's front face is the one (c - a) x (b - a) points
+## out of, so a face disagreeing with its own normal is inverted — invisible from
+## above, and (Jolt back-face culls a one-sided trimesh) not solid either, so a
+## kart falls through it. It happens where a corner is tighter than the road is
+## wide and the inner edge laps the stretch behind it.
+static func _folded_faces(design: TrackDesign) -> int:
+	var curve := design.build_curve()
+	var ribbon := RoadRibbon.build(curve, design.width_profile(curve), [])
+	if ribbon.mesh == null or ribbon.mesh.get_surface_count() == 0:
+		return 0
+	var arrays: Array = ribbon.mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var folded := 0
+	for face in range(vertices.size() / 3):
+		var a: Vector3 = vertices[face * 3]
+		var b: Vector3 = vertices[face * 3 + 1]
+		var c: Vector3 = vertices[face * 3 + 2]
+		var geometric: Vector3 = (c - a).cross(b - a)
+		if geometric.length() > 0.0001 and geometric.normalized().dot(normals[face * 3]) < -0.2:
+			folded += 1
+	return folded
+
+
+## A template has to survive being edited, not merely exist. Adding a point is
+## the first thing anyone does, and it used to be enough to fold the Twister's
+## road at six places — the template shipped right at the limit of what a road
+## that wide can turn, so any change tipped it over. Both halves of that are
+## checked here: the shapes have headroom, and split_node() puts its new point on
+## the road rather than on the straight line across the corner.
+func _check_templates_survive_editing() -> void:
+	for template in TrackDesign.TEMPLATES:
+		var id := String(template["id"])
+		if int(template["kind"]) != TrackDesign.Kind.RACE:
+			continue
+		_check("%s is built from sound geometry" % id, _folded_faces(TrackDesign.from_template(id)) == 0)
+
+		var worst_split := 0
+		var worst_jump := 0
+		var jumps_refused := 0
+		var jumps_built := 0
+		for i in range(TrackDesign.from_template(id).nodes.size()):
+			var split := TrackDesign.from_template(id)
+			split.split_node(i)
+			worst_split = maxi(worst_split, _folded_faces(split))
+			var jumped := TrackDesign.from_template(id)
+			if jumped.make_jump(i):
+				jumps_built += 1
+				worst_jump = maxi(worst_jump, _folded_faces(jumped))
+			else:
+				jumps_refused += 1
+		_check(
+			"%s survives a point added anywhere" % id,
+			worst_split == 0,
+			"worst %d folded faces" % worst_split
+		)
+		# make_jump() does NOT promise a sound road everywhere — a jump wants a
+		# straight, and asking for one on a tight corner folds it. What has to
+		# hold is that a jump is possible somewhere, since the editor checks the
+		# result and takes back the ones that don't work.
+		_check(
+			"%s has somewhere to put a jump" % id,
+			jumps_built > 0,
+			"%d of %d points" % [jumps_built, jumps_built + jumps_refused]
+		)
+
+
 func _test_round_trip() -> void:
 	print("\n--- save format ---")
 	var original := TrackDesign.from_template("hills")
 	original.design_name = "Round Trip"
 	original.colors["road"] = Color(0.2, 0.4, 0.6)
+	original.make_jump(3) # a ramp lip, a landing point and a pad, all at once
 	original.add_feature("rock", Vector3(31.0, 4.0, -12.0), 1.25, 2.5)
 	original.add_feature("bridge", Vector3(-40.0, 0.0, 8.0), -0.5, 30.0)
 
@@ -185,6 +254,23 @@ func _test_round_trip() -> void:
 			absf(float(original.nodes[i]["half_width"]) - float(restored.nodes[i]["half_width"]))
 		)
 	_check("node positions and widths kept", worst_node < 0.001, "worst drift %.4f" % worst_node)
+
+	var ramps_kept := true
+	var ramps_seen := 0
+	for i in range(original.nodes.size()):
+		if original.is_ramp(i):
+			ramps_seen += 1
+		if original.is_ramp(i) != restored.is_ramp(i):
+			ramps_kept = false
+	_check("ramp lips kept", ramps_kept and ramps_seen > 0, "%d lips" % ramps_seen)
+
+	# A file written before ramps existed has no such key at all, and has to load
+	# as a track with no ramps rather than not load.
+	var old_style: Dictionary = original.to_dict()
+	for entry in old_style["nodes"]:
+		(entry as Dictionary).erase("ramp")
+	var older := TrackDesign.from_dict(old_style)
+	_check("a save written before ramps still opens", older != null and older.nodes.size() == original.nodes.size())
 
 	_check("feature count kept", restored.features.size() == original.features.size())
 	var features_match := true
@@ -313,12 +399,27 @@ func _test_editing() -> void:
 	var before := design.nodes.size()
 	var inserted := design.split_node(0)
 	_check("splitting a segment adds a node", design.nodes.size() == before + 1)
-	_check("the new node is where the road already ran", inserted == 1)
+	_check("the new point goes in right after the one it split", inserted == 1)
 	if inserted == 1:
-		var a: Vector3 = design.nodes[0]["pos"]
-		var b: Vector3 = design.nodes[2]["pos"]
-		var mid: Vector3 = design.nodes[1]["pos"]
-		_check("new node sits between its neighbours", mid.distance_to((a + b) * 0.5) < 0.001)
+		# The point has to land ON the road, not on the straight line between its
+		# neighbours — the road bulges outside that chord on a corner, so a chord
+		# midpoint drags the road inwards and can pull a corner tight enough to
+		# fold it. "Add a point" should change the shape not at all.
+		var unedited := TrackDesign.from_template("oval")
+		var original := unedited.build_curve()
+		var added: Vector3 = design.nodes[1]["pos"]
+		var drift: float = added.distance_to(
+			original.sample_baked(original.get_closest_offset(added))
+		)
+		_check("the new point sits on the road as it already ran", drift < 0.5, "%.2f m off" % drift)
+		var chord: Vector3 = (
+			(unedited.nodes[0]["pos"] as Vector3) + (unedited.nodes[1]["pos"] as Vector3)
+		) * 0.5
+		_check(
+			"...which is not the same as the middle of the straight line",
+			added.distance_to(chord) > 0.5,
+			"%.2f m apart" % added.distance_to(chord)
+		)
 
 	while design.nodes.size() > TrackDesign.MIN_NODES:
 		design.remove_node(0)
