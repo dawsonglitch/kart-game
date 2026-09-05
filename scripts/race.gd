@@ -61,6 +61,7 @@ func _ready() -> void:
 
 	_place_kart(kart1, -LANE_OFFSET, 0)
 	kart1.set_display_name(GameSettings.player1_name)
+	kart1.set_vehicle(GameSettings.player1_vehicle)
 	kart1.set_kart_color(GameSettings.player1_color)
 	race_manager.register_kart(kart1)
 	cam1.set_target(kart1)
@@ -72,6 +73,7 @@ func _ready() -> void:
 	if two_player:
 		_place_kart(kart2, LANE_OFFSET, 0)
 		kart2.set_display_name(GameSettings.player2_name)
+		kart2.set_vehicle(GameSettings.player2_vehicle)
 		kart2.set_kart_color(GameSettings.player2_color)
 		race_manager.register_kart(kart2)
 		cam2.set_target(kart2)

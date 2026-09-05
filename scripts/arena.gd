@@ -57,6 +57,7 @@ func _ready() -> void:
 	var field_size: int = (2 if two_player else 1) + clamp(GameSettings.bot_count, 0, GameSettings.BOT_PROFILES.size())
 	_place_kart(kart1, 0.0)
 	kart1.set_display_name(GameSettings.player1_name)
+	kart1.set_vehicle(GameSettings.player1_vehicle)
 	kart1.set_kart_color(GameSettings.player1_color)
 	arena_manager.register_kart(kart1)
 	cam1.set_target(kart1)
@@ -69,6 +70,7 @@ func _ready() -> void:
 	if two_player:
 		_place_kart(kart2, 1.0 / float(field_size))
 		kart2.set_display_name(GameSettings.player2_name)
+		kart2.set_vehicle(GameSettings.player2_vehicle)
 		kart2.set_kart_color(GameSettings.player2_color)
 		arena_manager.register_kart(kart2)
 		cam2.set_target(kart2)

@@ -20,6 +20,20 @@ A little kart driving game I made for my kids. Godot 4.7, split-screen, keyboard
 
 Either mode can be 1 or 2 players, with 0–3 AI bots joining the field.
 
+Each player's **Car** selector offers the original **Classic Kart** and the
+Blender-built **Codex Jeep**. Choices carry through races, arena matches, restarts
+and returning to the menu. The color swatch changes the Jeep's primary paint;
+its teal panels and trim keep their authored colors. Both cars use the same
+handling and collision shape, and bots keep the classic kart.
+
+The Jeep is a visual model with static wheels, like the original kart. Its
+source/export workflow is in `assets/models/vehicles/README.md`. Selection and
+per-player paint have regression checks:
+
+```
+godot --headless --path . --script tests/test_vehicle_selection.gd
+```
+
 ## Who caused that crash?
 
 The arena scores crashes you *made happen*, not crashes you were in — otherwise
