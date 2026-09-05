@@ -1,12 +1,14 @@
 extends Control
 ## Title screen: pick a mode (lap race or the open bumper arena), how many bots
 ## join in, whether power-ups are on, 1 or 2 players, name your kart, and choose
-## its color.
+## its color and car.
 
 @onready var name1_field: LineEdit = $Center/VBox/Row1/Name1Field
 @onready var name2_field: LineEdit = $Center/VBox/Row2/Name2Field
 @onready var color1_button: ColorPickerButton = $Center/VBox/Row1/ColorButton1
 @onready var color2_button: ColorPickerButton = $Center/VBox/Row2/ColorButton2
+@onready var vehicle1_button: OptionButton = $Center/VBox/Row1/Vehicle1Button
+@onready var vehicle2_button: OptionButton = $Center/VBox/Row2/Vehicle2Button
 @onready var race_mode_button: Button = $Center/VBox/ModeRow/RaceModeButton
 @onready var arena_mode_button: Button = $Center/VBox/ModeRow/ArenaModeButton
 @onready var items_button: Button = $Center/VBox/BotRow/ItemsButton
@@ -27,6 +29,8 @@ func _ready() -> void:
 	name2_field.text = GameSettings.player2_name
 	color1_button.color = GameSettings.player1_color
 	color2_button.color = GameSettings.player2_color
+	_setup_vehicle_picker(vehicle1_button, GameSettings.player1_vehicle)
+	_setup_vehicle_picker(vehicle2_button, GameSettings.player2_vehicle)
 	# Default to the wheel layout rather than the rectangle — that's the "color wheel" look.
 	color1_button.get_picker().picker_shape = ColorPicker.SHAPE_HSV_WHEEL
 	color2_button.get_picker().picker_shape = ColorPicker.SHAPE_HSV_WHEEL
@@ -51,6 +55,14 @@ func _ready() -> void:
 	_select_mode(GameSettings.GameMode.RACE, true)
 	_select_bots(_selected_bots, true)
 	name1_field.grab_focus()
+
+
+func _setup_vehicle_picker(button: OptionButton, selected_id: int) -> void:
+	button.clear()
+	for option in VehicleCatalog.OPTIONS:
+		button.add_item(option["name"], option["id"])
+	button.select(button.get_item_index(VehicleCatalog.valid_id(selected_id)))
+	button.item_selected.connect(func(_index: int): AudioManager.play("ui_click", -8.0))
 
 
 ## Both mode buttons use toggle_mode so exactly one stays visually pressed — click
@@ -88,10 +100,18 @@ func _on_timer_toggled(enabled: bool) -> void:
 
 
 func _start(player_count: int) -> void:
+	_save_settings(player_count)
+	AudioManager.play("ui_click", -4.0)
+	get_tree().change_scene_to_file("res://scenes/loading_screen.tscn")
+
+
+func _save_settings(player_count: int) -> void:
 	GameSettings.player1_name = name1_field.text.strip_edges() if name1_field.text.strip_edges() != "" else "Player 1"
 	GameSettings.player2_name = name2_field.text.strip_edges() if name2_field.text.strip_edges() != "" else "Player 2"
 	GameSettings.player1_color = color1_button.color
 	GameSettings.player2_color = color2_button.color
+	GameSettings.player1_vehicle = vehicle1_button.get_selected_id()
+	GameSettings.player2_vehicle = vehicle2_button.get_selected_id()
 	GameSettings.player_count = player_count
 	GameSettings.game_mode = _selected_mode
 	GameSettings.bot_count = _selected_bots
@@ -101,5 +121,3 @@ func _start(player_count: int) -> void:
 		"res://scenes/arena.tscn" if _selected_mode == GameSettings.GameMode.ARENA
 		else "res://scenes/race.tscn"
 	)
-	AudioManager.play("ui_click", -4.0)
-	get_tree().change_scene_to_file("res://scenes/loading_screen.tscn")

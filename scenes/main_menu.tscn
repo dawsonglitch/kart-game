@@ -46,6 +46,7 @@ text = "P1: Arrows + Right Shift      P2: W A S D + Left Shift"
 custom_minimum_size = Vector2(0, 8)
 
 [node name="Row1" type="HBoxContainer" parent="Center/VBox"]
+alignment = 1
 theme_override_constants/separation = 8
 
 [node name="Name1Field" type="LineEdit" parent="Center/VBox/Row1"]
@@ -66,7 +67,17 @@ custom_minimum_size = Vector2(44, 44)
 color = Color(0.85, 0.15, 0.15, 1)
 edit_alpha = false
 
+[node name="CarLabel1" type="Label" parent="Center/VBox/Row1"]
+theme_override_font_sizes/font_size = 20
+text = "  Car"
+
+[node name="Vehicle1Button" type="OptionButton" parent="Center/VBox/Row1"]
+custom_minimum_size = Vector2(190, 44)
+theme_override_font_sizes/font_size = 20
+tooltip_text = "Player 1's car"
+
 [node name="Row2" type="HBoxContainer" parent="Center/VBox"]
+alignment = 1
 theme_override_constants/separation = 8
 
 [node name="Name2Field" type="LineEdit" parent="Center/VBox/Row2"]
@@ -86,6 +97,15 @@ alignment = 1
 custom_minimum_size = Vector2(44, 44)
 color = Color(0.15, 0.4, 0.9, 1)
 edit_alpha = false
+
+[node name="CarLabel2" type="Label" parent="Center/VBox/Row2"]
+theme_override_font_sizes/font_size = 20
+text = "  Car"
+
+[node name="Vehicle2Button" type="OptionButton" parent="Center/VBox/Row2"]
+custom_minimum_size = Vector2(190, 44)
+theme_override_font_sizes/font_size = 20
+tooltip_text = "Player 2's car"
 
 [node name="ModeRow" type="HBoxContainer" parent="Center/VBox"]
 alignment = 1

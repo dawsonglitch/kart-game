@@ -26,6 +26,10 @@ var player2_name: String = "Player 2"
 var player1_color: Color = Color(0.85, 0.15, 0.15)
 var player2_color: Color = Color(0.15, 0.4, 0.9)
 
+## Visual choice only: both cars share the same driving and collision model.
+var player1_vehicle: int = VehicleCatalog.Kind.CLASSIC_KART
+var player2_vehicle: int = VehicleCatalog.Kind.CLASSIC_KART
+
 ## How many AI-driven karts join the field, 0-3. Set from the main menu; race.gd
 ## and arena.gd instance that many extra karts and attach an AIDriver to each.
 var bot_count: int = 2

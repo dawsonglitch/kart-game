@@ -21,6 +21,7 @@ signal impact(strength: float)
 
 @export var player_id: int = 1
 @export var kart_color: Color = Color(0.85, 0.15, 0.15)
+@export_enum("Classic Kart", "Codex Jeep") var vehicle_id: int = VehicleCatalog.Kind.CLASSIC_KART
 @export var display_name: String = ""
 ## When true this kart is driven by ai_driver (see ai_driver.gd) instead of the
 ## keyboard, and never reads the p%d_* input actions.
@@ -158,6 +159,9 @@ var _oil_scene: PackedScene = load("res://scenes/hazard_oil.tscn")
 ## — that can't be expressed in the scene file against the shared imported clip.
 var _engine_player: AudioStreamPlayer
 
+var _vehicle_model: Node3D
+var _vehicle_paint: Array[StandardMaterial3D] = []
+
 
 func _ready() -> void:
 	respawn_position = global_position
@@ -169,7 +173,7 @@ func _ready() -> void:
 	# bots must stay out of this group or they'd act as listeners themselves.
 	if not is_ai:
 		add_to_group("player_karts")
-	_apply_color()
+	set_vehicle(vehicle_id)
 	_setup_name_tag()
 	_setup_engine_audio()
 	if shield_bubble:
@@ -431,7 +435,46 @@ func _update_visual_lean(steer_input: float, delta: float) -> void:
 	chassis.rotation.x = lerp_angle(chassis.rotation.x, target_pitch, 8.0 * delta)
 
 
+## Swap only the visual model. Physics, effects, camera targets and gameplay
+## signals stay on this same kart for either vehicle and either game mode.
+func set_vehicle(id: int) -> void:
+	vehicle_id = VehicleCatalog.valid_id(id)
+	if not is_instance_valid(chassis):
+		return
+	if _vehicle_model:
+		chassis.remove_child(_vehicle_model)
+		_vehicle_model.queue_free()
+		_vehicle_model = null
+	_vehicle_paint.clear()
+	for child in chassis.get_children():
+		if child is MeshInstance3D:
+			child.visible = vehicle_id == VehicleCatalog.Kind.CLASSIC_KART
+	if vehicle_id == VehicleCatalog.Kind.CODEX_JEEP:
+		var packed: PackedScene = load(VehicleCatalog.CODEX_JEEP_SCENE)
+		_vehicle_model = packed.instantiate()
+		_vehicle_model.name = "VehicleModel"
+		chassis.add_child(_vehicle_model)
+		_prepare_vehicle_paint(_vehicle_model)
+	_apply_color()
+
+
+func _prepare_vehicle_paint(node: Node) -> void:
+	if node is MeshInstance3D:
+		for surface in range(node.mesh.get_surface_count()):
+			var material: Material = node.mesh.surface_get_material(surface)
+			# Keep the authored teal panels, ivory lettering and dark trim. Only
+			# the primary enamel follows the player's color wheel.
+			if material is StandardMaterial3D and material.resource_name == "codex-sunburst-enamel":
+				var paint := material.duplicate() as StandardMaterial3D
+				node.set_surface_override_material(surface, paint)
+				_vehicle_paint.append(paint)
+	for child in node.get_children():
+		_prepare_vehicle_paint(child)
+
+
 func _apply_color() -> void:
+	for paint in _vehicle_paint:
+		paint.albedo_color = kart_color
 	var mat := ToonMaterial.create(kart_color, 0.6) # 0.6 — glossy car paint, not chrome
 	for part_name in PAINTED_PARTS:
 		var part := chassis.get_node_or_null(part_name) as MeshInstance3D
