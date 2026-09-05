@@ -177,4 +177,4 @@ func _on_restart_requested() -> void:
 func _on_quit_requested() -> void:
 	get_tree().paused = false
 	AudioManager.stop_ambience()
-	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+	get_tree().change_scene_to_file(GameSettings.exit_scene_path)

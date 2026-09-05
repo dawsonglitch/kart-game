@@ -34,6 +34,9 @@ var _drawn: String = ""
 
 func _ready() -> void:
 	restart_button.pressed.connect(func() -> void: restart_requested.emit())
+	# Matches the pause menu's exit — both mean the same thing, and during a
+	# track designer test drive both go back to the editor.
+	quit_button.text = GameSettings.exit_label
 	quit_button.pressed.connect(func() -> void: quit_requested.emit())
 	set_process(false)
 	hide()

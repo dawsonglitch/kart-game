@@ -382,6 +382,77 @@ static func build_water(parent: Node3D, canyons: Array) -> void:
 		mi.transform = Transform3D(Basis(Vector3.UP, -yaw), Vector3(mid.x, canyon["water"], mid.y))
 
 
+## The road surface's material. track.tscn carries its own copy of this as a
+## saved sub-resource; player-made tracks and the editor's preview build theirs
+## here so a design's road color reaches both of them the same way.
+static func road_material(color: Color) -> ShaderMaterial:
+	var material := ToonMaterial.create(color)
+	material.set_shader_parameter("albedo_texture", load("res://assets/textures/road_albedo.jpg"))
+	material.set_shader_parameter("uv_scale", Vector2(1.0, 1.0))
+	material.set_shader_parameter("band_count", 3)
+	material.set_shader_parameter("rim_amount", 0.15)
+	return material
+
+
+# ---------------------------------------------------------------------------
+# Finish line — a checkered arch over the road plus a checkered ground stripe,
+# so it's obvious the moment you cross it, not just a number ticking up in the HUD.
+# ---------------------------------------------------------------------------
+
+## The start/finish line: a checkered arch over the road plus a checkered stripe
+## across it, always at offset zero. Shared by the built-in circuit and by
+## player-made tracks, which need exactly the same thing and would otherwise each
+## grow their own slightly different version of it.
+static func build_finish_line(parent: Node3D, ribbon: RoadRibbon) -> void:
+	var t := ribbon.frame_at(0.0)
+	var half_width := ribbon.half_width_at(0.0)
+	var post_lateral := half_width + 1.2
+	var checker_mat := StandardMaterial3D.new()
+	checker_mat.albedo_texture = _build_checker_texture()
+	checker_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	checker_mat.uv1_scale = Vector3(5, 2, 1)
+
+	var post_mesh := CylinderMesh.new()
+	post_mesh.top_radius = 0.18
+	post_mesh.bottom_radius = 0.22
+	post_mesh.height = 5.5
+	var post_mat := StandardMaterial3D.new()
+	post_mat.albedo_color = Color(0.85, 0.15, 0.15)
+
+	for side: float in [-1.0, 1.0]:
+		var post := MeshInstance3D.new()
+		post.mesh = post_mesh
+		post.material_override = post_mat
+		parent.add_child(post)
+		post.global_transform = t.translated_local(Vector3(side * post_lateral, 2.75, 0))
+
+	var banner_mesh := BoxMesh.new()
+	banner_mesh.size = Vector3(post_lateral * 2.0 + 0.4, 1.3, 0.2)
+	var banner := MeshInstance3D.new()
+	banner.mesh = banner_mesh
+	banner.material_override = checker_mat
+	parent.add_child(banner)
+	banner.global_transform = t.translated_local(Vector3(0, 5.2, 0))
+
+	var stripe_mesh := BoxMesh.new()
+	stripe_mesh.size = Vector3(half_width * 2.0 + 0.6, 0.08, 2.0)
+	var stripe := MeshInstance3D.new()
+	stripe.mesh = stripe_mesh
+	stripe.material_override = checker_mat
+	parent.add_child(stripe)
+	stripe.global_transform = t.translated_local(Vector3(0, 0.09, 0))
+
+
+static func _build_checker_texture() -> ImageTexture:
+	var size := 8
+	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
+	for y in range(size):
+		for x in range(size):
+			var is_white := (x + y) % 2 == 0
+			image.set_pixel(x, y, Color.WHITE if is_white else Color.BLACK)
+	return ImageTexture.create_from_image(image)
+
+
 # ---------------------------------------------------------------------------
 
 static func _multimesh(

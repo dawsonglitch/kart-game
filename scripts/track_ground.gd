@@ -69,14 +69,23 @@ var mesas: Array = []
 var canyons: Array = []
 
 var _noise := FastNoiseLite.new()
+var _noise_height: float = NOISE_HEIGHT
 var _buckets: Dictionary = {}
 var _max_reach: float = 0.0
 
 
-static func create(ribbon: RoadRibbon, mesas_in: Array, canyons_in: Array) -> TrackGround:
+## `noise_height` overrides how bumpy the open ground is. The racetrack wants the
+## default — rolling country the road is cut through — while a player-made bumper
+## arena wants something much flatter, since every square metre of it is driven on
+## rather than looked at.
+static func create(
+	ribbon: RoadRibbon, mesas_in: Array, canyons_in: Array,
+	noise_height: float = NOISE_HEIGHT
+) -> TrackGround:
 	var ground := TrackGround.new()
 	ground._noise.seed = NOISE_SEED
 	ground._noise.frequency = NOISE_FREQUENCY
+	ground._noise_height = noise_height
 	ground.mesas = mesas_in
 	ground.canyons = canyons_in
 	for i in range(ribbon.station_count()):
@@ -123,7 +132,7 @@ func _nearby(x: float, z: float) -> PackedInt32Array:
 
 
 func height_at(x: float, z: float) -> float:
-	var result: float = _noise.get_noise_2d(x, z) * NOISE_HEIGHT
+	var result: float = _noise.get_noise_2d(x, z) * _noise_height
 	for mesa in mesas:
 		var center: Vector2 = mesa["pos"]
 		var d: float = Vector2(x, z).distance_to(center)
@@ -187,6 +196,11 @@ func distance_to_road_edge(x: float, z: float) -> float:
 		var d: float = Vector2(x - p.x, z - p.z).length() - station_half_widths[i]
 		best = min(best, d)
 	if best == INF:
+		if stations.is_empty():
+			# No road at all (a bumper arena's ground). "As far as it gets" —
+			# returning _max_reach, which is zero here, would tell every caller
+			# it was standing on tarmac.
+			return INF
 		# Outside every bucket means further than HILL_MARGIN from any road.
 		return _max_reach
 	return max(best, 0.0)

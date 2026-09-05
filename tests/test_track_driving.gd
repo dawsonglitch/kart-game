@@ -8,6 +8,14 @@ extends SceneTree
 ## built wrong. It has already earned its keep once: a kerbed island down the
 ## middle of a wide straight looked fine in every structural check, and then a bot
 ## drove into its nose and stayed there for the rest of the race.
+##
+## Naming a track designer template drives that instead of the built-in circuit:
+##
+##     godot --headless --path . --script tests/test_track_driving.gd -- twister
+##
+## which is how a player-made layout gets the same "can the field actually get
+## round it" check the shipped one does. The twister is the useful one to run:
+## it is the narrowest and tightest thing the templates can produce.
 
 const RACE_SECONDS := 190.0
 const MIN_LAPS := 2
@@ -54,7 +62,15 @@ func _start() -> void:
 	settings.player_count = 1
 	settings.bot_count = 3
 	settings.items_enabled = true
-	_scene = load("res://scenes/race.tscn").instantiate()
+	# Anything after `--` on the command line names a track designer template to
+	# drive instead of the built-in circuit.
+	var extra: PackedStringArray = OS.get_cmdline_user_args()
+	if extra.size() > 0:
+		print("driving the '%s' template" % extra[0])
+		settings.select_design(TrackDesign.from_template(extra[0]))
+	else:
+		settings.select_design(null, settings.GameMode["RACE"])
+	_scene = load(settings.next_scene_path).instantiate()
 	root.add_child(_scene)
 	_manager = get_first_node_in_group("race_manager")
 	for kart in get_nodes_in_group("karts"):

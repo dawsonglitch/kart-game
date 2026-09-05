@@ -1,0 +1,15 @@
+[gd_scene format=3 uid="uid://cq0ctrack01"]
+
+[ext_resource type="Script" path="res://scripts/custom_track_builder.gd" id="1"]
+
+[node name="Track" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Path3D" type="Path3D" parent="."]
+
+[node name="RoadMesh" type="MeshInstance3D" parent="."]
+
+[node name="RoadBody" type="StaticBody3D" parent="."]
+collision_layer = 1
+
+[node name="RoadShape" type="CollisionShape3D" parent="RoadBody"]
