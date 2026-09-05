@@ -11,6 +11,9 @@ signal quit_requested
 
 
 func _ready() -> void:
+	# "Main Menu" normally, "Back to Editor" during a track designer test drive —
+	# see GameSettings.exit_label.
+	quit_button.text = GameSettings.exit_label
 	resume_button.pressed.connect(_on_resume_pressed)
 	restart_button.pressed.connect(func(): restart_requested.emit())
 	quit_button.pressed.connect(func(): quit_requested.emit())

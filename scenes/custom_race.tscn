@@ -1,14 +1,14 @@
-[gd_scene format=3 uid="uid://cq0race0001"]
+[gd_scene format=3 uid="uid://cq0crace001"]
 
 [ext_resource type="Script" path="res://scripts/race.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/race_manager.gd" id="2"]
 [ext_resource type="Script" path="res://scripts/camera_rig.gd" id="3"]
-[ext_resource type="PackedScene" path="res://scenes/track.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/custom_track.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/kart.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/pause_menu.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/standings.tscn" id="10"]
-[ext_resource type="Script" path="res://scripts/terrain_builder.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/custom_terrain_builder.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/sky_clouds_builder.gd" id="9"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat_1"]
@@ -54,6 +54,7 @@ directional_shadow_max_distance = 300.0
 
 [node name="Terrain" type="Terrain3D" parent="World"]
 script = ExtResource("8")
+source_path = NodePath("../Track")
 
 [node name="CloudsDriver" type="Node" parent="World"]
 script = ExtResource("9")

@@ -29,6 +29,11 @@ var _lap: Dictionary = {}               # kart -> laps completed so far
 var _race_time: Dictionary = {}         # kart -> elapsed seconds since race start
 var _finished: Dictionary = {}          # kart -> bool
 var _results: Array = []
+## race_finished fires once, when the last *human* crosses. Bots trickling in
+## behind them keep filling in _results, but they must not re-announce a race
+## that's already over — the finish fanfare and the standings board would
+## replay on every late bot.
+var _results_announced: bool = false
 
 
 func _ready() -> void:
@@ -93,13 +98,19 @@ func _finish_kart(kart: Node3D) -> void:
 		"display_name": _get_display_name(kart),
 		"total_time": _race_time[kart],
 		"is_ai": _is_ai(kart),
+		"color": _get_color(kart),
 		"place": _results.size() + 1,
+		"finished": true,
 	})
+	GameSettings.last_results = _results
 	# Emitting once the last *human* finishes, not the last kart overall: a slow
-	# bot three corners back shouldn't hold up the results screen. Bots that
-	# haven't finished simply don't appear in the standings.
+	# bot three corners back shouldn't hold up the results screen. Bots still out
+	# there aren't dropped, though — get_standings() lists them as DNF until they
+	# come in, and the board picks the change up while it's on screen.
+	if _results_announced:
+		return
 	if _all_players_finished():
-		GameSettings.last_results = _results
+		_results_announced = true
 		race_finished.emit(_results)
 
 
@@ -124,6 +135,10 @@ func _is_ai(kart: Node3D) -> bool:
 	return kart.is_ai if "is_ai" in kart else false
 
 
+func _get_color(kart: Node3D) -> Color:
+	return kart.kart_color if "kart_color" in kart else Color(1, 1, 1)
+
+
 func get_lap(kart: Node3D) -> int:
 	return _lap.get(kart, 0)
 
@@ -141,6 +156,35 @@ func get_final_place(kart: Node3D) -> int:
 		if result["player_id"] == _get_player_id(kart):
 			return result["place"]
 	return 0
+
+
+## The whole field for the end-of-race board, best first: everyone who crossed the
+## line in finish order, then anyone still driving, ranked by how far round they
+## got. Unfinished karts carry `finished: false` and are shown as DNF rather than
+## left off — beating the bots is only worth something if you can see by how much.
+## Safe to call repeatedly while the board is up; late finishers move themselves
+## out of the DNF block on the next call.
+func get_standings() -> Array:
+	var standings: Array = _results.duplicate(true)
+	var running: Array = []
+	for kart in karts:
+		if not is_instance_valid(kart) or _finished.get(kart, false):
+			continue
+		running.append(kart)
+	running.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return get_progress(a) > get_progress(b)
+	)
+	for kart in running:
+		standings.append({
+			"player_id": _get_player_id(kart),
+			"display_name": _get_display_name(kart),
+			"total_time": _race_time.get(kart, 0.0),
+			"is_ai": _is_ai(kart),
+			"color": _get_color(kart),
+			"place": standings.size() + 1,
+			"finished": false,
+		})
+	return standings
 
 
 # ---------------------------------------------------------------------------

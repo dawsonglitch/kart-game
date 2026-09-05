@@ -74,7 +74,7 @@ func _process(_delta: float) -> void:
 	if not kart:
 		return
 	if race_manager:
-		time_label.text = "Time: %s" % _format_time(race_manager.get_race_time(kart))
+		time_label.text = "Time: %s" % RaceTime.stamp(race_manager.get_race_time(kart))
 		_update_position_label(race_manager)
 	elif arena_manager:
 		_update_arena_clock()
@@ -97,10 +97,10 @@ func _update_position_label(manager: Node) -> void:
 ## the time limit switched off it just shows elapsed session time, as before.
 func _update_arena_clock() -> void:
 	if not arena_manager.timed:
-		time_label.text = "Time: %s" % _format_time(arena_manager.elapsed_time)
+		time_label.text = "Time: %s" % RaceTime.stamp(arena_manager.elapsed_time)
 		return
 	var left: float = arena_manager.time_left
-	time_label.text = "⏱ %s" % _format_clock(left)
+	time_label.text = "⏱ %s" % RaceTime.clock(left)
 	var urgent: bool = left <= float(arena_manager.FINAL_BEEP_SECONDS)
 	time_label.modulate = Color(1, 0.4, 0.35) if urgent else Color(1, 1, 1)
 
@@ -145,7 +145,7 @@ func _on_race_finished(results: Array) -> void:
 			# A win gets the bigger fanfare; anything else gets the finish chime.
 			AudioManager.play("win" if r.place == 1 else "finish", -4.0)
 			message_label.visible = true
-			message_label.text = "%s!\n%s" % [_place_name(r.place), _format_time(r.total_time)]
+			message_label.text = "%s!\n%s" % [_place_name(r.place), RaceTime.stamp(r.total_time)]
 
 
 func _on_crash_count_changed(player_id: int, count: int) -> void:
@@ -208,6 +208,13 @@ func _on_match_finished(results: Array) -> void:
 	message_label.visible = true
 
 
+## Called by race.gd when the shared standings board comes up: the per-player
+## finish flash has had its moment, and leaving it behind the dimmed overlay just
+## makes the board harder to read.
+func clear_message() -> void:
+	message_label.visible = false
+
+
 func _is_mine(player_id: int) -> bool:
 	return kart != null and "player_id" in kart and kart.player_id == player_id
 
@@ -216,20 +223,3 @@ func _update_lap_label() -> void:
 	var lap: int = race_manager.get_lap(kart) if race_manager else 0
 	var total: int = race_manager.TOTAL_LAPS
 	lap_label.text = "Lap %d/%d" % [min(lap + 1, total), total]
-
-
-## Whole seconds only — a countdown flickering through hundredths is just noise
-## next to the race clock, where the fractions are the point.
-func _format_clock(t: float) -> String:
-	var whole := int(ceil(t))
-	@warning_ignore("integer_division") # intentional — minutes as a whole number
-	var minutes := whole / 60
-	return "%d:%02d" % [minutes, whole % 60]
-
-
-func _format_time(t: float) -> String:
-	@warning_ignore("integer_division") # intentional — minutes as a whole number
-	var minutes := int(t) / 60
-	var seconds := int(t) % 60
-	var ms := int((t - int(t)) * 100)
-	return "%d:%02d.%02d" % [minutes, seconds, ms]

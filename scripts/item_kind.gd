@@ -37,18 +37,43 @@ static func color(kind: int) -> Color:
 	return DATA.get(kind, DATA[Kind.NONE])["color"]
 
 
-## Weighted draw. Karts further back get the more disruptive items (rocket) more
-## often and the defensive one less — the standard kart-racer rubber band, so a
-## kid who's behind has a real shot at catching up. `rank_fraction` is 0.0 for
-## the leader and 1.0 for last place.
-static func roll(rng: RandomNumberGenerator, rank_fraction: float = 0.5) -> int:
+## Everything a box can hand out on a track: get-ahead item included.
+const RACE_POOL := [Kind.TURBO, Kind.ROCKET, Kind.OIL, Kind.SHIELD]
+
+## The bumper arena's smaller pool — the two attack weapons and the shield. No
+## turbo: with no finish line there is nowhere for speed to get you, so drawing
+## one is a wasted turn (the bots even sit on it, see ai_driver.gd's
+## _decide_item, until the max-hold timer dumps it into empty floor).
+const ARENA_POOL := [Kind.ROCKET, Kind.OIL, Kind.SHIELD]
+
+
+## Which pool a `GameSettings.GameMode` draws from. Kept here beside the catalog
+## rather than at the call sites so a new item is still a one-file change.
+static func pool_for_mode(game_mode: int) -> Array:
+	return ARENA_POOL if game_mode == GameSettings.GameMode.ARENA else RACE_POOL
+
+
+## Weighted draw from `pool` (defaults to the full race pool). Karts further back
+## get the more disruptive items (rocket) more often and the defensive one less —
+## the standard kart-racer rubber band, so a kid who's behind has a real shot at
+## catching up. `rank_fraction` is 0.0 for the leader and 1.0 for last place.
+##
+## The weights are relative, so a pool that leaves an item out simply shares its
+## odds among the rest — no second table to keep in step with this one.
+static func roll(rng: RandomNumberGenerator, rank_fraction: float = 0.5, pool: Array = RACE_POOL) -> int:
 	var behind: float = clamp(rank_fraction, 0.0, 1.0)
-	var weights := {
+	var all_weights := {
 		Kind.TURBO: 3.0 + behind * 2.0,
 		Kind.ROCKET: 1.5 + behind * 3.0,
 		Kind.OIL: 2.5 - behind * 1.0,
 		Kind.SHIELD: 2.5 - behind * 1.5,
 	}
+	var weights := {}
+	for kind in pool:
+		if all_weights.has(kind):
+			weights[kind] = all_weights[kind]
+	if weights.is_empty():
+		return Kind.NONE
 	var total := 0.0
 	for kind in weights:
 		total += weights[kind]
@@ -57,4 +82,4 @@ static func roll(rng: RandomNumberGenerator, rank_fraction: float = 0.5) -> int:
 		pick -= weights[kind]
 		if pick <= 0.0:
 			return kind
-	return Kind.TURBO
+	return weights.keys().back()

@@ -235,7 +235,7 @@ func _ready() -> void:
 	_place_hazards()
 	_place_checkpoints()
 	_place_item_boxes()
-	_build_finish_line()
+	TrackProps.build_finish_line(self, _ribbon)
 	_build_structures()
 	_place_scenery()
 
@@ -450,61 +450,6 @@ func get_ground() -> TrackGround:
 ## Used by race_manager to place karts at the start line, side by side.
 func get_start_transform(lane_offset: float) -> Transform3D:
 	return _transform_at(0.0).translated_local(Vector3(lane_offset, 0.0, 0.0))
-
-
-# ---------------------------------------------------------------------------
-# Finish line — a checkered arch over the road plus a checkered ground stripe,
-# so it's obvious the moment you cross it, not just a number ticking up in the HUD.
-# ---------------------------------------------------------------------------
-
-func _build_finish_line() -> void:
-	var t := _transform_at(0.0)
-	var half_width := _ribbon.half_width_at(0.0)
-	var post_lateral := half_width + 1.2
-	var checker_mat := StandardMaterial3D.new()
-	checker_mat.albedo_texture = _build_checker_texture()
-	checker_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	checker_mat.uv1_scale = Vector3(5, 2, 1)
-
-	var post_mesh := CylinderMesh.new()
-	post_mesh.top_radius = 0.18
-	post_mesh.bottom_radius = 0.22
-	post_mesh.height = 5.5
-	var post_mat := StandardMaterial3D.new()
-	post_mat.albedo_color = Color(0.85, 0.15, 0.15)
-
-	for side: float in [-1.0, 1.0]:
-		var post := MeshInstance3D.new()
-		post.mesh = post_mesh
-		post.material_override = post_mat
-		add_child(post)
-		post.global_transform = t.translated_local(Vector3(side * post_lateral, 2.75, 0))
-
-	var banner_mesh := BoxMesh.new()
-	banner_mesh.size = Vector3(post_lateral * 2.0 + 0.4, 1.3, 0.2)
-	var banner := MeshInstance3D.new()
-	banner.mesh = banner_mesh
-	banner.material_override = checker_mat
-	add_child(banner)
-	banner.global_transform = t.translated_local(Vector3(0, 5.2, 0))
-
-	var stripe_mesh := BoxMesh.new()
-	stripe_mesh.size = Vector3(half_width * 2.0 + 0.6, 0.08, 2.0)
-	var stripe := MeshInstance3D.new()
-	stripe.mesh = stripe_mesh
-	stripe.material_override = checker_mat
-	add_child(stripe)
-	stripe.global_transform = t.translated_local(Vector3(0, 0.09, 0))
-
-
-func _build_checker_texture() -> ImageTexture:
-	var size := 8
-	var image := Image.create(size, size, false, Image.FORMAT_RGB8)
-	for y in range(size):
-		for x in range(size):
-			var is_white := (x + y) % 2 == 0
-			image.set_pixel(x, y, Color.WHITE if is_white else Color.BLACK)
-	return ImageTexture.create_from_image(image)
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 extends Area3D
 ## A floating, spinning "?" box. Drive through it to get a random power-up (see
-## item_kind.gd). Only karts with an empty hand pick it up — a kart already
-## holding something drives straight through, so a box is never wasted.
+## item_kind.gd). Which power-ups are on the table depends on the mode: a race
+## can hand out anything, the bumper arena only the attack weapons and the
+## shield. Only karts with an empty hand pick it up — a kart already holding
+## something drives straight through, so a box is never wasted.
 ##
 ## Picked-up boxes hide and respawn on a timer instead of being freed, so a lap
 ## later the same box is back where the kids expect it. Placement is done by
@@ -19,10 +21,14 @@ var _time: float = 0.0
 var _base_y: float = 0.0
 var _available: bool = true
 var _rng := RandomNumberGenerator.new()
+## The items this box can give out, fixed for the session — the mode can't change
+## without a scene reload, so there's no reason to look it up per pickup.
+var _pool: Array = ItemKind.RACE_POOL
 
 
 func _ready() -> void:
 	_rng.randomize()
+	_pool = ItemKind.pool_for_mode(GameSettings.game_mode)
 	_base_y = visual.position.y
 	# Desync the bob/spin of neighboring boxes so a row of them doesn't pulse in
 	# lockstep (same trick hazard_obstacle.gd uses for its sweeping logs).
@@ -46,7 +52,7 @@ func _on_body_entered(body: Node3D) -> void:
 		return
 	if body.held_item != ItemKind.Kind.NONE:
 		return # already holding something — leave the box for someone else
-	body.grant_item(ItemKind.roll(_rng, _rank_fraction_of(body)))
+	body.grant_item(ItemKind.roll(_rng, _rank_fraction_of(body), _pool))
 	_consume()
 
 

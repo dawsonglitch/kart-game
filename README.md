@@ -13,6 +13,11 @@ A little kart driving game I made for my kids. Godot 4.7, split-screen, keyboard
   clock runs out wins. Turn the timer off on the main menu for the old
   open-ended rink that never ends.
 
+- **🛠 Track Designer** — make your own. Start from a template, drag the road
+  around, drop trees and jumps and ponds on it, recolour everything, drive it,
+  and save it. Saved tracks show up in the **Track** picker on the main menu
+  alongside the two built-in courses.
+
 Either mode can be 1 or 2 players, with 0–3 AI bots joining the field.
 
 Each player's **Car** selector offers the original **Classic Kart** and the
@@ -72,6 +77,86 @@ godot --headless --path . --script tests/test_arena_map.gd
 godot --headless --path . --script tests/test_track_driving.gd
 ```
 
+Which power-ups each mode can hand out is checked too — a race draws from all
+four, the arena only from the weapons and the shield:
+
+```
+godot --headless --path . --script tests/test_item_pool.gd
+```
+
+## The track designer
+
+`🛠 Designer` on the main menu opens it, on whatever the Track picker has
+selected — a saved track to keep working on it, or a built-in course to start
+something new of that kind.
+
+You get five starting points: three circuits (**Oval**, **Hill Loop**,
+**Twister**) and two rinks (**Open Rink**, **Junkyard**). All five are already
+drivable, so a kid who changes nothing still ends up with a working track.
+
+| | |
+|---|---|
+| **Shape the road** | Drag a red handle. Hold **Shift** while dragging to raise or lower it — that's how you get hills and dips. The **Width** slider widens or pinches the road at that point, and **Add point** puts a new handle further along so you can bend the lap somewhere new. |
+| **Build a jump** | **🛫 Make a jump here** on a selected point does the whole thing in one press: it sharpens the road into a lip instead of a smooth curve, drops a landing point in just past it so the road falls away at about twenty-five degrees, and puts a jump pad on the lip. Drag the lip up or down to make it bigger or smaller. A jump needs a reasonably straight stretch; on a corner that's too tight for one the editor says so and puts the road back. |
+| **Change your mind** | **↩ Undo** (or Ctrl+Z) takes back the last forty edits — every drag, every colour, every deletion, and a whole jump in one press. Starting a new track, opening another, or going back to the menu all ask before throwing away anything unsaved. |
+| **Drop things on it** | Pick something from **Things to add** and click the ground: trees, rocks, crates, jump pads, boost pads, item boxes, oil slicks, bridges and water. Blue handles move them; **Size** and **Turn** adjust the selected one. |
+| **Recolour it** | The **Colors** row does the road, the ground, the leaves, the rocks, the water and the sky. |
+| **Drive it** | **▶ Test Drive** runs the track you're looking at, unsaved changes and all, and the pause menu comes back to the editor rather than the main menu. |
+| **Keep it** | **💾 Save Track** writes it under whatever's in the name box. **📂 Open** lists everything you've saved, to reopen or delete. |
+| **Get around** | Drag empty space to spin the view, right-drag to pan, wheel to zoom. The line under the title tells you how long a lap is as you go. |
+
+Saved tracks are JSON files in Godot's per-user data directory
+(`user://tracks/`, which is
+`~/Library/Application Support/Godot/app_userdata/RacingGameWithKids/tracks` on
+this machine) — one file per track, named after the track, safe to copy or back
+up.
+
+A player-made course is built by the same code the shipped ones are: the same
+`road_ribbon.gd` for the banked, varying-width road, the same `track_ground.gd`
+height field under it, the same terrain, pads, boxes, hazards and the crowd
+around the start line. What the editor previews is what you drive — the one
+exception is the Terrain3D heightmap, which takes seconds to stamp and would
+make dragging a handle unusable, so the editor draws its own coarse mesh of the
+same height field instead.
+
+One thing the editor watches for and warns about: a corner tighter than the road
+is wide can't be built. The road's inner edge laps over the stretch behind it and
+that patch comes out wound inside out — invisible, and not solid, so a kart drops
+through it. If you draw one, an orange bar says so and tells you how to fix it.
+
+The pieces:
+
+```
+track_design.gd          the design itself, as plain data — road nodes, features,
+                         colors, the templates, and the JSON it saves as
+track_library.gd         user://tracks — save, list, open, delete
+track_editor.gd          the editor: the 3D view, the handles, the panel
+custom_track_builder.gd  a design -> a race track (road, gates, finish line)
+custom_arena_builder.gd  a design -> a bumper rink (floor, wall, spawns)
+custom_features.gd       the trees/rocks/jumps/bridges/water, shared by both
+custom_terrain_builder.gd  stamps either one's ground into Terrain3D
+```
+
+Checked headlessly — the save format, the library, and the worlds both builders
+generate:
+
+```
+godot --headless --path . --script tests/test_track_design.gd
+```
+
+...and the editor's own wiring, driven through its real buttons:
+
+```
+godot --headless --path . --script tests/test_track_editor.gd
+```
+
+A generated track can also be handed to the AI field, which is the only way to
+find out whether a layout is actually drivable rather than merely well formed:
+
+```
+godot --headless --path . --script tests/test_track_driving.gd -- twister
+```
+
 ## Controls
 
 | | Steer | Go | Brake / reverse | Use item |
@@ -87,12 +172,15 @@ Drive through a floating `?` box to pick one up (one at a time). Whoever's furth
 back gets better odds on the aggressive items, so a kid who's behind can still
 catch up. Items can be switched off entirely on the main menu.
 
-| | Item | What it does |
-|---|---|---|
-| 🔥 | Turbo | A big speed burst — stronger and longer than a track boost pad |
-| 🚀 | Rocket | Fires forward and gently homes in on whoever's ahead; dodgeable |
-| 🛢 | Oil Slick | Drops behind you; whoever hits it loses grip. Fades after ~14s |
-| 🛡 | Shield | Absorbs the next hit, then pops |
+| | Item | What it does | Arena |
+|---|---|---|---|
+| 🔥 | Turbo | A big speed burst — stronger and longer than a track boost pad | — |
+| 🚀 | Rocket | Fires forward and gently homes in on whoever's ahead; dodgeable | yes |
+| 🛢 | Oil Slick | Drops behind you; whoever hits it loses grip. Fades after ~14s | yes |
+| 🛡 | Shield | Absorbs the next hit, then pops | yes |
+
+The bumper arena hands out only the weapons and the shield. There's no finish
+line to race to, so a turbo there is a wasted pick-up.
 
 ## Bots
 
@@ -136,12 +224,15 @@ the waypoints, not at fixed distances.
 
 ```
 autoload/    GameSettings (cross-scene state), AudioManager (SFX/ambience)
-scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads
+scenes/      main_menu, race, arena, kart, hud, item_box, rocket, hazards, pads,
+             track_editor, and the custom_* variants player-made tracks run in
 scripts/     one per scene, plus ai_driver.gd, item_kind.gd, crash_blame.gd,
              and the track/arena builders:
                road_ribbon.gd   the road surface mesh — banking and varying width
                track_ground.gd  the height field the terrain and the props share
-               track_props.gd   viaduct, arch gallery, grandstands, barriers
+               track_props.gd   viaduct, arch gallery, grandstands, barriers,
+                                the finish line and the road's material
+             the track designer has its own set — see above
 tests/       headless GDScript checks for the crash-attribution rules
 shaders/     toon.gdshader — the cel-shaded look everything shares
 ```
